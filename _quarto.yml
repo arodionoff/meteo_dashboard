@@ -1,0 +1,22 @@
+theme: 
+  light: [sandstone, themes/dashboard.scss]
+  dark: [sandstone, themes/dashboard-dark.scss]
+fig-width: 10
+fig-asp: 0.3
+embed-resources: true
+format: 
+  html:
+    logo: images/weather.jpg
+    nav-buttons:
+      - icon: github
+        href: https://github.com/arodionoff/meteo_dashboard
+        aria-label: GitHub
+      - icon: linkedin
+        href: https://www.linkedin.com/in/alexandr-rodionov-b8239769/
+        aria-label: LinkedIn
+      - icon: rpubs
+        href: https://rpubs.com/A_Rodionoff
+        aria-label: RPubs
+project: 
+  type: default
+  output-dir: output

@@ -1,21 +1,34 @@
 ---
-title: "Using ROpenMeteo with Quarto dashboard by"
+title: "Using {openmeteo} package with Quarto dashboard"
 author: 
   name: Alexander Rodionov
   email: a.rodionoff@gmail.com
   roles: "Ph.D., Data Scientist"
-date: last-modified
 date_start: "7 November 2024"
-date-format: "D MMMM YYYY"
+# orientation: columns
+params:
+  loc_name: 'Phuquoc Island'
+  loc_code: 'PQC'
+  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  Start_Date:  1994-11-01
+  Finish_Date: 2024-11-01
 ---
 
-```{r setup}
+```{r}
+#| label: setup
 #| include: false
 # Global options
 
 ```
 
-```{r Libraries}
+---
+subtitle: "for **`r params$loc_name`** (`r round(params$loc_coordinats['latitude'], digi = 2)`° Lat, `r round(params$loc_coordinats['longitude'], digi = 2)`° Long) by"
+---
+
+# Historical Data
+
+```{r}
+#| label: Libraries
 
 library('ggplot2')          # Create Elegant Data Visualisations Using the Grammar of Graphics
 library('dplyr')            # A Grammar of Data Manipulation 
@@ -30,7 +43,9 @@ library('openmeteo')        # Retrieve Weather Data from the Open-Meteo API
 
 ```
 
-```{r Meteo Dictionaries }
+```{r}
+#| label: Meteo Dictionaries
+
 # WMO CODE TABLE 4677 - https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM
 
 WCO_Codes_tbl <- 
@@ -188,48 +203,127 @@ ONI_tbl <- tibble::tribble(
 
 ```
 
-## Load Dataset from OpenMeteo (Daily Weather Variables)
+```{r}
+#| label: Loading dataset
+#| title: Retrieve historical weather data from the Open-Meteo API
 
-Исторические данные могут загружаться напрямую с помошью пакета [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) из [**Open-Meteo API**](https://open-meteo.com/en/docs), так как в нем имеется возможность взять нижеследующие **посуточные** переменные:
-
---- относительная влажность на уровне 2 м (англ. relative_humidity_2m), 
-
---- атмосферные осадки (англ. precipitation), 
-
---- скорость ветра на уровне 10 м (англ. wind_speed_10m), 
-
---- облачность (англ. cloud_cover),
-
---- температуцра воздуха на уровне 2 м (англ. temperature_2m), 
-
---- инфракрасное излучение (англ. shortwave_radiation).
-
-```{r Loading dataset}
-# Retrieve historical weather data from the Open-Meteo API
-
-prq_filename <- 'data/meteo_pqc.zst.parquet'
-loc_name <- 'Phuquoc island'
-loc_coordinats <-  c('latitude' = 10.2872, 'longitude' = 104.0105)
-loc_interval <- lubridate::as.interval(lubridate::period(months = 12 * -30), lubridate::ymd('2024-11-01', tz = 'Asia/Ho_Chi_Minh')) %>% 
-  lubridate::int_flip()
+prq_filename <- paste0('data/meteo_',  params$loc_code, '.zst.parquet')
+# loc_coordinats <-  params$loc_coordinats
+# loc_interval <- lubridate::as.interval(lubridate::period(months = 12 * -30), lubridate::ymd('2024-11-01', tz = 'Asia/Ho_Chi_Minh')) %>% 
+#   lubridate::int_flip()
 
 # meteo_df <- # obtain Weather history for Location over 1950
 #   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
-#                               location = loc_coordinats,   # Phuquoc island
-#                               start = lubridate::int_start(loc_interval),
-#                               end = lubridate::int_end(loc_interval),
+#                               location = params$loc_coordinats,
+#                               start = params$Start_Dat,
+#                               end = params$Finish_Date,
 #                               daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
 
-if (exists('meteo_df') == TRUE) arrow::write_parquet(df, prq_filename, compression = 'zstd', compression_level = 6) else meteo_df = arrow::read_parquet(file = prq_filename)
+if (exists('meteo_df') == TRUE) {
+  arrow::write_parquet( meteo_df, prq_filename, compression = 'zstd', compression_level = 6) 
+} else {
+  meteo_df = arrow::read_parquet(file = prq_filename)
+}     # The End of if (exists('meteo_df') == TRUE)
 
 ```
 
+## Row - <i class="bi bi-calendar-range"></i> Value boxes {height="15%"}
 
-```{r Merge dataset}
+```{r}
+#| content: valuebox
+#| label: Years
+#| title: Duration of observation
+#| subtitle:  !expr "paste('Duration of observation', format(as.Date(params$Start_Date), '%B %Y'), '---', format(as.Date(params$Finish_Date), '%B %Y'))"
+
+dur <- paste('Duration of observation', format(as.Date(params$Start_Date), '%B %Y'), '---', format(as.Date(params$Finish_Date), '%B %Y'))
+
+list(
+  icon = 'calendar-range',
+  color = '#eed5b7',
+  value = lubridate::interval(lubridate::ymd(params$Start_Date), lubridate::ymd(params$Finish_Date)) |>
+    lubridate::as.duration() |> as.integer('year')  |> paste('Years')
+    )
+```
+
+```{r}
+#| content: valuebox
+#| label: Mean Annual Temperature
+#| title: Mean Annual Temperature
+
+list(
+  icon = 'thermometer-sun',
+  color = '#fff8dc',
+  value = round( mean(meteo_df$daily_temperature_2m_mean, na.rm = TRUE), digi = 1 ) |> paste0('°C')
+    )
+```
+
+```{r}
+#| content: valuebox
+#| label: Max Temperature
+#| title: Maximum Temperature
+
+list(
+  icon = 'thermometer-high',
+  color = '#ff7f50',
+  value = round( max(meteo_df$daily_temperature_2m_max, na.rm = TRUE), digi = 1 ) |> paste0('°C')
+    )
+```
+
+```{r}
+#| content: valuebox
+#| label: Min Temperature
+#| title: Minimum Temperature
+
+list(
+  icon = 'thermometer-snow',
+  color = 'info',
+  value = round( min(meteo_df$daily_temperature_2m_min, na.rm = TRUE), digi = 1 ) |> paste0('°C')
+    )
+```
+
+```{r}
+#| content: valuebox
+#| label: Mean Annual Precipitation
+#| title: Mean Annual Precipitation
+
+list(
+  icon = 'cloud-rain',
+  color = 'blue',
+  value = format( round(mean(meteo_df$daily_precipitation_sum, na.rm = TRUE) * 365.24, digi = 1), big.mark = ' ') |> paste('mm')
+   )
+```
+
+## Row - Cards {height="85%"}
+
+### Sidebar - Load Dataset from OpenMeteo (Daily Weather Variables) {.card-sidebar width="20%"}
+
+<small>
+
+Исторические данные могут загружаться напрямую с помошью пакета [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) из [**Open-Meteo API**](https://open-meteo.com/en/docs), так как в нем имеется возможность взять нижеследующие **посуточные** переменные:
+
+| Наименование | Переменная | Ед. изм. |
+|---------------------------------|:-------------------:|:----------------:|
+| температура воздуха на уровне 2 м | temperature_2m | °C |
+| относительная влажность на уровне 2 м | relative_humidity_2m | \% |
+| скорость ветра на уровне 10 м | wind_speed_10m | км/час |
+| скорость порывов ветра на уровне 10 м | wind_gusts_10m | км/час |
+| продолжительность пребывания Солнца над горизонтом | daylight_duration | сек |
+| продолжительность освещения незатемненным Солнцем | sunshine_duration | сек |
+| атмосферные осадки | precipitation | мм |
+| тепловое радиация Солнца | shortwave_radiation | Вт/м² |
+| потенциальное испарение с поверхности открытой воды по ФАО | et0_fao_evapotranspiration | мм/день |
+
+</small>
+
+### Column - Merge datasets {width="40%"}
+
+```{r}
+#| label: Merge dataset
+#| title: 'Набор данных'
 
 #### I. Merge Weather Dataset with WCO Codes Dictionary
 
-tbl <- 
+meteo_tbl <- 
   meteo_df %>% 
     dplyr::left_join( x = ., y = WCO_Codes_tbl
                     , by = c('daily_weather_code' = 'weather_code'), relationship = 'many-to-one' ) %>% 
@@ -239,11 +333,17 @@ tbl <-
         dplyr::select( -tidyselect::ends_with(' Month') ) %>% 
     dplyr::mutate(Month = lubridate::month(date)) 
 
-pillar::glimpse(tbl)
+pillar::glimpse(meteo_tbl, width = 120)
 
 ```
 
-```{r Chart}
+### Column - Результаты {width="40%"}
+
+#### Row - Диаграмма {height="80%"}
+
+```{r}
+#| label: Chart
+#| title: 'Температура воздуха по месяцам года'
 
 # Функция для создания графика японских свечей
 candleStick_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
@@ -260,7 +360,7 @@ candleStick_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max
       ggplot2::geom_segment(aes(x = period, xend = period, y = open, yend = close, colour = greenRed), linewidth = 3) +
       ggplot2::geom_segment(aes(x = period, xend = period, y = high, yend = low, colour = greenRed)) +
       ggplot2::scale_color_manual(values = c('Forest Green', 'Red')) +
-      ggplot2::ggtitle(paste0('Phuquoc', ' (', from, ' - ', to, ')')) +
+      ggplot2::ggtitle(paste0(params$loc_name, ' (', from, ' - ', to, ')')) +
       ggplot2::theme_minimal() +
       ggplot2::coord_fixed(ylim = c(25, NA)) +
       ggplot2::theme(legend.position = 'none', axis.title.y = ggplot2::element_blank(), 
@@ -271,15 +371,16 @@ candleStick_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max
 }    # The End of function `candleStick_plot()`
 
 # Пример использования функции
-candleStick_plot(data = meteo_df, from = as.Date('2017-01-01'), to = as.Date('2023-12-31'))
+candleStick_plot(data = meteo_tbl, from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date))
 
 ```
 
+#### Row - Описание сессии {height="20%"}
+
 ::: {.callout-caution collapse="true"}
-
-## Описание сессии
-
-```{r The End of Session}
+```{r}
+#| label: The End of Session
+#| title: 'Какие пакеты использовались'
 #| comment: ''
 
 # The End of Session
@@ -288,7 +389,15 @@ devtools::session_info()
 
 Sys.time()
 
-
 ```
+:::
 
+# Map & Data {orientation="columns" scrolling="true"}
+
+::: card
+Здесь будет размещен набор данных
+:::
+
+::: card
+Здесь будет размещена карта
 :::

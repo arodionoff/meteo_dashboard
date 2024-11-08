@@ -1,11 +1,13 @@
+date: last-modified
+date-format: "D MMMM YYYY"
 theme: 
   light: [sandstone, themes/dashboard.scss]
   dark: [sandstone, themes/dashboard-dark.scss]
-fig-width: 10
-fig-asp: 0.3
+# fig-width: 10
+# fig-asp: 0.3
 embed-resources: true
 format: 
-  html:
+  dashboard:
     logo: images/weather.jpg
     nav-buttons:
       - icon: github
@@ -14,9 +16,14 @@ format:
       - icon: linkedin
         href: https://www.linkedin.com/in/alexandr-rodionov-b8239769/
         aria-label: LinkedIn
-      - icon: rpubs
-        href: https://rpubs.com/A_Rodionoff
-        aria-label: RPubs
+      - icon: youtube
+        href: https://www.youtube.com/watch?v=HW7QbqI4fH0
+        aria-label: Youtube
+      # - icon: rpubs
+      #   href: https://rpubs.com/A_Rodionoff
+      #   aria-label: RPubs
+    # orientation: rows
+    scrolling: false
 project: 
   type: default
   output-dir: output

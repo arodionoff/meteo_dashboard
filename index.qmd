@@ -22,7 +22,7 @@ params:
 ```
 
 ---
-subtitle: "for **`r params$loc_name`** (`r round(params$loc_coordinats['latitude'], digi = 2)`° Lat, `r round(params$loc_coordinats['longitude'], digi = 2)`° Long) by"
+subtitle: "for **`r params$loc_name`** (`r round(params$loc_coordinats['latitude'], digi = 2)`°N Lat, `r round(params$loc_coordinats['longitude'], digi = 2)`°E Lng) by"
 ---
 
 # Historical Data
@@ -225,17 +225,19 @@ if (exists('meteo_df') == TRUE) {
   meteo_df = arrow::read_parquet(file = prq_filename)
 }     # The End of if (exists('meteo_df') == TRUE)
 
+dur <- paste0( format(as.Date(params$Start_Date), '%b %Y'), ' - ', format(as.Date(params$Finish_Date), '%b %Y') )
+
 ```
 
-## Row - <i class="bi bi-calendar-range"></i> Value boxes {height="15%"}
+## Row - <i class="bi bi-calendar-range"></i> Value boxes {height="18%"}
 
 ```{r}
 #| content: valuebox
 #| label: Years
-#| title: Duration of observation
-#| subtitle:  !expr "paste('Duration of observation', format(as.Date(params$Start_Date), '%B %Y'), '---', format(as.Date(params$Finish_Date), '%B %Y'))"
+#| title: !expr "dur"
+#| subtitle: !expr "paste('Duration of observation:', format(as.Date(params$Start_Date), '%b %Y'), '---', format(as.Date(params$Finish_Date), '%b %Y'))"
 
-dur <- paste('Duration of observation', format(as.Date(params$Start_Date), '%B %Y'), '---', format(as.Date(params$Finish_Date), '%B %Y'))
+# Value Boxes with Icons - https://icons.getbootstrap.com/
 
 list(
   icon = 'calendar-range',
@@ -252,34 +254,52 @@ list(
 
 list(
   icon = 'thermometer-sun',
-  color = '#fff8dc',
+  color = 'success',
   value = round( mean(meteo_df$daily_temperature_2m_mean, na.rm = TRUE), digi = 1 ) |> paste0('°C')
     )
 ```
 
-```{r}
-#| content: valuebox
-#| label: Max Temperature
-#| title: Maximum Temperature
+<!-- empty -->
 
-list(
-  icon = 'thermometer-high',
-  color = '#ff7f50',
-  value = round( max(meteo_df$daily_temperature_2m_max, na.rm = TRUE), digi = 1 ) |> paste0('°C')
-    )
-```
+<!-- ```{r} -->
 
-```{r}
-#| content: valuebox
-#| label: Min Temperature
-#| title: Minimum Temperature
+<!-- #| content: valuebox -->
 
-list(
-  icon = 'thermometer-snow',
-  color = 'info',
-  value = round( min(meteo_df$daily_temperature_2m_min, na.rm = TRUE), digi = 1 ) |> paste0('°C')
-    )
-```
+<!-- #| label: Max Temperature -->
+
+<!-- #| title: Maximum Temperature -->
+
+<!-- list( -->
+
+<!--   icon = 'thermometer-high', -->
+
+<!--   color = '#ff7f50', -->
+
+<!--   value = round( max(meteo_df$daily_temperature_2m_max, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
+
+<!--     ) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- #| content: valuebox -->
+
+<!-- #| label: Min Temperature -->
+
+<!-- #| title: Minimum Temperature -->
+
+<!-- list( -->
+
+<!--   icon = 'thermometer-snow', -->
+
+<!--   color = 'info', -->
+
+<!--   value = round( min(meteo_df$daily_temperature_2m_min, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
+
+<!--     ) -->
+
+<!-- ``` -->
 
 ```{r}
 #| content: valuebox
@@ -293,7 +313,20 @@ list(
    )
 ```
 
-## Row - Cards {height="85%"}
+```{r}
+#| content: valuebox
+#| label: Mean Number of Days per year without Precipitation
+#| title: Mean Days w/o Precipitation in Year
+#| fill: false
+
+list(
+  icon = 'sun',
+  color = '#fffacd',
+  value = round(meteo_df |> dplyr::filter(daily_precipitation_sum == 0) |> nrow() / nrow(meteo_df) * 365.24) |> paste('Days')
+   )
+```
+
+## Row - Cards {height="82%"}
 
 ### Sidebar - Load Dataset from OpenMeteo (Daily Weather Variables) {.card-sidebar width="20%"}
 
@@ -302,7 +335,7 @@ list(
 Исторические данные могут загружаться напрямую с помошью пакета [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) из [**Open-Meteo API**](https://open-meteo.com/en/docs), так как в нем имеется возможность взять нижеследующие **посуточные** переменные:
 
 | Наименование | Переменная | Ед. изм. |
-|---------------------------------|:-------------------:|:----------------:|
+|--------------------------------|:-------------------:|:-----------------:|
 | температура воздуха на уровне 2 м | temperature_2m | °C |
 | относительная влажность на уровне 2 м | relative_humidity_2m | \% |
 | скорость ветра на уровне 10 м | wind_speed_10m | км/час |
@@ -315,11 +348,14 @@ list(
 
 </small>
 
-### Column - Merge datasets {width="40%"}
+### Column - Merge datasets
+
+::: {.card title="Набор данных" width="40%" fill="false"}
+Structure of Dataset
 
 ```{r}
 #| label: Merge dataset
-#| title: 'Набор данных'
+#| expandable: false
 
 #### I. Merge Weather Dataset with WCO Codes Dictionary
 
@@ -336,6 +372,7 @@ meteo_tbl <-
 pillar::glimpse(meteo_tbl, width = 120)
 
 ```
+:::
 
 ### Column - Результаты {width="40%"}
 
@@ -392,12 +429,49 @@ Sys.time()
 ```
 :::
 
-# Map & Data {orientation="columns" scrolling="true"}
+# Data & Map {orientation="columns" scrolling="true"}
 
-::: card
-Здесь будет размещен набор данных
+::: {.card title='Рассмотрим исторические данные' width="70%"}
+
+Теперь убедимся в деталях набора данных:
+
+```{r}
+#| label: Interaction Table
+
+library('DT')               # A Wrapper of the JavaScript Library 'DataTables'
+
+meteo_tbl |>
+  dplyr::select(-Weather, -Conditions) |>
+  DT::datatable(options = list(dom = 'ftp', paging = TRUE))
+```
 :::
 
-::: card
-Здесь будет размещена карта
+::: {.card title='Рассмотрим географический объект' width="30%"}
+
+`{r} paste0(params$loc_name, ' (', params$loc_code, ')' )` помещается тут:
+
+```{r}
+#| label: Interaction Map
+
+library('leaflet')          # Create Interactive Web Maps with the JavaScript 'Leaflet' Library 
+
+leaflet::leaflet() |> 
+  # leaflet::addTiles(group = "OSM (default)") |>
+  # leaflet::addProviderTiles(providers$CartoDB.Positron, group = "Positron (minimal)") |>
+  # leaflet::addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery (satellite)") |>
+  leaflet::addProviderTiles(providers$Stadia.StamenTerrain, group = "World Terrain (color)") |>
+  leaflet::addMarkers(lng = params$loc_coordinats['longitude'], lat = params$loc_coordinats['latitude'],
+             popup = paste0(params$loc_name, ' (', params$loc_code, ')' )) |>
+  leaflet::setView(lng = as.double(params$loc_coordinats['longitude']), 
+                   lat = as.double(params$loc_coordinats['latitude']), zoom = 7)
+
+# leaflet::leaflet() |>
+#   leaflet::addTiles() |>
+#   leaflet::addProviderTiles(providers$Stamen.Terrain) |>
+#   leaflet::addMarkers(lng = params$loc_coordinats['longitude'], lat = params$loc_coordinats['latitude'], 
+#              popup = paste0(params$loc_name, ' (', params$loc_code, ')' )) |>
+#   leaflet::fitBounds(lng1 = params$loc_coordinats['longitude'] - 0.2, lat1 = params$loc_coordinats['latitude'] - 0.2,
+#                      lng2 = params$loc_coordinats['longitude'] + 0.2, lat2 = params$loc_coordinats['latitude'] + 0.2)
+
+```
 :::

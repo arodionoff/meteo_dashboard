@@ -37,6 +37,8 @@ library('tibble')           # Simple Data Frames
 library('lubridate')        # Dates and times made easy with lubridate
 library('tidyr')            # Tidy Messy Data 
 library('arrow')            # Integration to 'Apache' 'Arrow'
+library('DT')               # A Wrapper of the JavaScript Library 'DataTables'
+library('leaflet')          # Create Interactive Web Maps with the JavaScript 'Leaflet' Library 
 
 # devtools::install_github('tpisel/openmeteo')
 library('openmeteo')        # Retrieve Weather Data from the Open-Meteo API
@@ -208,9 +210,6 @@ ONI_tbl <- tibble::tribble(
 #| title: Retrieve historical weather data from the Open-Meteo API
 
 prq_filename <- paste0('data/meteo_',  params$loc_code, '.zst.parquet')
-# loc_coordinats <-  params$loc_coordinats
-# loc_interval <- lubridate::as.interval(lubridate::period(months = 12 * -30), lubridate::ymd('2024-11-01', tz = 'Asia/Ho_Chi_Minh')) %>% 
-#   lubridate::int_flip()
 
 # meteo_df <- # obtain Weather history for Location over 1950
 #   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
@@ -259,46 +258,25 @@ list(
     )
 ```
 
-<!-- empty -->
-
 <!-- ```{r} -->
-
 <!-- #| content: valuebox -->
-
 <!-- #| label: Max Temperature -->
-
 <!-- #| title: Maximum Temperature -->
-
 <!-- list( -->
-
 <!--   icon = 'thermometer-high', -->
-
 <!--   color = '#ff7f50', -->
-
 <!--   value = round( max(meteo_df$daily_temperature_2m_max, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
-
 <!--     ) -->
-
 <!-- ``` -->
-
 <!-- ```{r} -->
-
 <!-- #| content: valuebox -->
-
 <!-- #| label: Min Temperature -->
-
 <!-- #| title: Minimum Temperature -->
-
 <!-- list( -->
-
 <!--   icon = 'thermometer-snow', -->
-
 <!--   color = 'info', -->
-
 <!--   value = round( min(meteo_df$daily_temperature_2m_min, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
-
 <!--     ) -->
-
 <!-- ``` -->
 
 ```{r}
@@ -309,13 +287,13 @@ list(
 list(
   icon = 'cloud-rain',
   color = 'blue',
-  value = format( round(mean(meteo_df$daily_precipitation_sum, na.rm = TRUE) * 365.24, digi = 1), big.mark = ' ') |> paste('mm')
+  value = format( round(mean(meteo_df$daily_precipitation_sum, na.rm = TRUE) * 365.24, digi = 0), big.mark = ' ') |> paste('mm')
    )
 ```
 
 ```{r}
 #| content: valuebox
-#| label: Mean Number of Days per year without Precipitation
+#| label: Mean Number of Days per Year without Precipitation
 #| title: Mean Days w/o Precipitation in Year
 #| fill: false
 
@@ -386,29 +364,31 @@ pillar::glimpse(meteo_tbl, width = 120)
 candleStick_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
   data %>% 
     dplyr::filter(date >= from & date <= to) %>% 
-      dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
-        dplyr::group_by(period) %>%
+      # dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
+      dplyr::mutate(Month = factor(Month, labels = month.abb)) %>% 
+        dplyr::group_by(Month) %>%
           dplyr::summarise( open  = dplyr::first(daily_temperature_2m_mean, na_rm = TRUE),
                             close = dplyr::last(daily_temperature_2m_mean, na_rm = TRUE),
-                            high  = base::min(daily_temperature_2m_max, na_rm = TRUE),
-                            low   = base::min(daily_temperature_2m_min, na_rm = TRUE), .groups = 'drop' ) %>% 
+                            high  = base::max(daily_temperature_2m_max, na_rm = TRUE),
+                            low   = base::min(daily_apparent_temperature_min), .groups = 'drop' ) %>%
             dplyr::mutate(greenRed = ifelse(open - close > 0, 'Red', 'Green')) %>%
     ggplot2::ggplot( data = . ) +
-      ggplot2::geom_segment(aes(x = period, xend = period, y = open, yend = close, colour = greenRed), linewidth = 3) +
-      ggplot2::geom_segment(aes(x = period, xend = period, y = high, yend = low, colour = greenRed)) +
-      ggplot2::scale_color_manual(values = c('Forest Green', 'Red')) +
-      ggplot2::ggtitle(paste0(params$loc_name, ' (', from, ' - ', to, ')')) +
+      ggplot2::geom_segment(aes(x = Month, xend = Month, y = open, yend = close, colour = greenRed), linewidth = 10) +
+      ggplot2::geom_segment(aes(x = Month, xend = Month, y = high, yend = low, colour = greenRed), linewidth = .8) +
+      ggplot2::scale_color_manual(values = c('Forest Green', 'Red')) +  # month.abb
+      ggplot2::ggtitle( paste0(params$loc_name, " (", round(params$loc_coordinats['latitude'], digi = 2), "°N Lat, ", round(params$loc_coordinats['longitude'], digi = 2), "°E Lng)") ) +
       ggplot2::theme_minimal() +
-      ggplot2::coord_fixed(ylim = c(25, NA)) +
-      ggplot2::theme(legend.position = 'none', axis.title.y = ggplot2::element_blank(), 
-                     axis.title.x = ggplot2::element_blank(), 
-                     axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1), 
+      # ggplot2::coord_fixed(ylim = c(25, NA)) +
+      ggplot2::theme(legend.position = 'none', axis.title.y = ggplot2::element_blank(),
+                     axis.title.x = ggplot2::element_blank(),
+                     axis.text.x = ggplot2::element_text(size = 14, vjust = 0.5),
+                     axis.text.y = ggplot2::element_text(size = 14, vjust = 0.5, hjust = 1),
                      plot.title = ggplot2::element_text(hjust = 0.5))
-          
+
 }    # The End of function `candleStick_plot()`
 
 # Пример использования функции
-candleStick_plot(data = meteo_tbl, from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date))
+candleStick_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
 
 ```
 
@@ -438,8 +418,6 @@ Sys.time()
 ```{r}
 #| label: Interaction Table
 
-library('DT')               # A Wrapper of the JavaScript Library 'DataTables'
-
 meteo_tbl |>
   dplyr::select(-Weather, -Conditions) |>
   DT::datatable(options = list(dom = 'ftp', paging = TRUE))
@@ -452,8 +430,6 @@ meteo_tbl |>
 
 ```{r}
 #| label: Interaction Map
-
-library('leaflet')          # Create Interactive Web Maps with the JavaScript 'Leaflet' Library 
 
 leaflet::leaflet() |> 
   # leaflet::addTiles(group = "OSM (default)") |>

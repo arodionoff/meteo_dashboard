@@ -7,9 +7,9 @@ author:
 date_start: "7 November 2024"
 # orientation: columns
 params:
-  loc_name: 'Phuquoc Island'
-  loc_code: 'PQC'
-  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  loc_name: 'Phuquoc Island'  # 'Almaty City' 
+  loc_code:  'PQC'# 'ALA'
+  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
   Start_Date:  1994-11-01
   Finish_Date: 2024-11-01
 ---
@@ -20,10 +20,6 @@ params:
 # Global options
 
 ```
-
----
-subtitle: "for **`r params$loc_name`** (`r round(params$loc_coordinats['latitude'], digi = 2)`°N Lat, `r round(params$loc_coordinats['longitude'], digi = 2)`°E Lng) by"
----
 
 # Historical Data
 
@@ -43,7 +39,14 @@ library('leaflet')          # Create Interactive Web Maps with the JavaScript 'L
 # devtools::install_github('tpisel/openmeteo')
 library('openmeteo')        # Retrieve Weather Data from the Open-Meteo API
 
+Title <- 
+  paste0(params$loc_name, " (", round(params$loc_coordinats['latitude'], digi = 2), ifelse(params$loc_coordinats['latitude'] > 0, "°N Lat, ",  "°S Lat, "), round(params$loc_coordinats['longitude'], digi = 2), ifelse(params$loc_coordinats['longitude'] > 0, "°E Lng)", "°W Lng)"))
+
 ```
+
+---
+subtitle: "for **`r Title`** by"
+---
 
 ```{r}
 #| label: Meteo Dictionaries
@@ -258,27 +261,6 @@ list(
     )
 ```
 
-<!-- ```{r} -->
-<!-- #| content: valuebox -->
-<!-- #| label: Max Temperature -->
-<!-- #| title: Maximum Temperature -->
-<!-- list( -->
-<!--   icon = 'thermometer-high', -->
-<!--   color = '#ff7f50', -->
-<!--   value = round( max(meteo_df$daily_temperature_2m_max, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
-<!--     ) -->
-<!-- ``` -->
-<!-- ```{r} -->
-<!-- #| content: valuebox -->
-<!-- #| label: Min Temperature -->
-<!-- #| title: Minimum Temperature -->
-<!-- list( -->
-<!--   icon = 'thermometer-snow', -->
-<!--   color = 'info', -->
-<!--   value = round( min(meteo_df$daily_temperature_2m_min, na.rm = TRUE), digi = 1 ) |> paste0('°C') -->
-<!--     ) -->
-<!-- ``` -->
-
 ```{r}
 #| content: valuebox
 #| label: Mean Annual Precipitation
@@ -313,7 +295,7 @@ list(
 Исторические данные могут загружаться напрямую с помошью пакета [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) из [**Open-Meteo API**](https://open-meteo.com/en/docs), так как в нем имеется возможность взять нижеследующие **посуточные** переменные:
 
 | Наименование | Переменная | Ед. изм. |
-|--------------------------------|:-------------------:|:-----------------:|
+|--------------------------------|:-----------:|:----:|
 | температура воздуха на уровне 2 м | temperature_2m | °C |
 | относительная влажность на уровне 2 м | relative_humidity_2m | \% |
 | скорость ветра на уровне 10 м | wind_speed_10m | км/час |
@@ -345,7 +327,7 @@ meteo_tbl <-
                        by = dplyr::join_by( dplyr::between(date, `Start Month`, `Finish Month`)),
                        relationship = 'many-to-many') %>%
         dplyr::select( -tidyselect::ends_with(' Month') ) %>% 
-    dplyr::mutate(Month = lubridate::month(date)) 
+    dplyr::mutate(Month = factor(lubridate::month(date), , labels = month.abb))
 
 pillar::glimpse(meteo_tbl, width = 120)
 
@@ -357,61 +339,74 @@ pillar::glimpse(meteo_tbl, width = 120)
 #### Row - Диаграмма {height="80%"}
 
 ```{r}
-#| label: Chart
-#| title: 'Температура воздуха по месяцам года'
+#| label: Union Air Temperature & Precipitation Chart
+#| title: 'Температура воздуха по среднемесячным температурам воздуха и выпадению осадкам'
 
-# Функция для создания графика японских свечей
-candleStick_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
-  data %>% 
-    dplyr::filter(date >= from & date <= to) %>% 
-      # dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
-      dplyr::mutate(Month = factor(Month, labels = month.abb)) %>% 
+# Функция для создания графика по среднемесячным температурам воздуха и выпадению осадкам
+Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
+  data <- 
+    data %>% 
+      dplyr::filter(date >= from & date <= to) %>% 
         dplyr::group_by(Month) %>%
-          dplyr::summarise( open  = dplyr::first(daily_temperature_2m_mean, na_rm = TRUE),
-                            close = dplyr::last(daily_temperature_2m_mean, na_rm = TRUE),
-                            high  = base::max(daily_temperature_2m_max, na_rm = TRUE),
-                            low   = base::min(daily_apparent_temperature_min), .groups = 'drop' ) %>%
-            dplyr::mutate(greenRed = ifelse(open - close > 0, 'Red', 'Green')) %>%
+          dplyr::summarise( high_month = base::max(daily_temperature_2m_max, na.rm = TRUE),
+                            max_day   = base::max(daily_temperature_2m_mean),
+                            median = stats::median(daily_temperature_2m_mean, na.rm = TRUE),
+                            min_day  = base::min(daily_temperature_2m_mean),
+                            low_month = base::min(daily_temperature_2m_min, na.rm = TRUE), .groups = 'drop' ) %>% 
+      dplyr::full_join( x = ., y = data %>% 
+        dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
+          dplyr::group_by(period) %>%
+            dplyr::summarise( Month = dplyr::first(Month),
+                              precipitation_sum = sum(daily_precipitation_sum, na.rm = TRUE), .groups = 'drop' ) %>% 
+              dplyr::group_by(Month) %>% 
+                dplyr::summarise( Precipitation = mean(precipitation_sum, na.rm = TRUE), .groups = 'drop' ),
+        by = dplyr::join_by( Month == Month) )
+
+  legend_labels <- c(
+    high_month = "Maximum of the \nhighest temperature \nof the Month",
+    max_day = "Maximum average \nDaily temperature",
+    median = "Median average \nDaily temperature",
+    min_day = "Minimum average \nDaily temperature",
+    low_month = "Minimum of the \nlowest temperature \nof the Month")
+  
+  data %>%
+    tidyr::pivot_longer(-c(Month, Precipitation), names_to = 'variable', values_to = 'value') %>%
     ggplot2::ggplot( data = . ) +
-      ggplot2::geom_segment(aes(x = Month, xend = Month, y = open, yend = close, colour = greenRed), linewidth = 10) +
-      ggplot2::geom_segment(aes(x = Month, xend = Month, y = high, yend = low, colour = greenRed), linewidth = .8) +
-      ggplot2::scale_color_manual(values = c('Forest Green', 'Red')) +  # month.abb
-      ggplot2::ggtitle( paste0(params$loc_name, " (", round(params$loc_coordinats['latitude'], digi = 2), "°N Lat, ", round(params$loc_coordinats['longitude'], digi = 2), "°E Lng)") ) +
+      ggplot2::geom_col( data = data, aes(x = Month, y = Precipitation), fill = 'paleturquoise' ) +
+      ggplot2::geom_line(aes(x = Month, y = value / 0.0825, group = variable, color = variable, linetype = variable)) +
+      ggplot2::geom_point( data = data, aes(x = Month, y = median / 0.0825), color = 'coral' ) +
+      # ggplot2::geom_segment(data = data, aes(x = Month, xend = Month, y = low_month, yend = high_month, color = greenRed), size = 0.1) +
+      ggplot2::geom_text(data = data, aes(label = round(median, 1), x = Month, y = median / 0.0825), size = 3, nudge_x = -0.3, nudge_y = 9, color = 'coral') +
+      ggplot2::scale_color_manual( values = c(max_day = 'red', min_day = 'blue', high_month = 'red', low_month = 'blue', median = 'coral'), labels = legend_labels ) +
+      ggplot2::scale_linewidth_manual( values = c(max_day = 0.1, min_day = 0.1, high_month = 1, low_month = 1, median = 2) ) +
+      ggplot2::scale_linetype_manual(values = c(max_day = 'dashed', min_day = 'dashed', high_month = 'dotted', low_month = 'dotted', median = 'solid'), labels = legend_labels ) +
+      ggplot2::scale_y_continuous(name = 'Average Month Precipitation, mm', sec.axis = ggplot2::sec_axis(transform = ~ . * 0.0825, name = 'Air Temperature, °C')) +
+      ggplot2::labs(title = Title, color = 'Variable', linetype = 'Time Line') +
       ggplot2::theme_minimal() +
-      # ggplot2::coord_fixed(ylim = c(25, NA)) +
-      ggplot2::theme(legend.position = 'none', axis.title.y = ggplot2::element_blank(),
+      # ggplot2::lims(y = c(16, NA)) +
+      # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+      ggplot2::theme(axis.title.y = ggplot2::element_blank(),  
+                     legend.position = 'right', legend.text = element_text(size = 9),
                      axis.title.x = ggplot2::element_blank(),
                      axis.text.x = ggplot2::element_text(size = 14, vjust = 0.5),
                      axis.text.y = ggplot2::element_text(size = 14, vjust = 0.5, hjust = 1),
-                     plot.title = ggplot2::element_text(hjust = 0.5))
+                     plot.title = ggplot2::element_text(hjust = 0.5)) +
+      ggplot2::guides(color = guide_legend(title = ''), linetype = guide_legend(title = ''))
 
 }    # The End of function `candleStick_plot()`
 
 # Пример использования функции
-candleStick_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
 
 ```
 
-#### Row - Описание сессии {height="20%"}
+# Data & Map {orientation="rows" scrolling="true"}
 
-::: {.callout-caution collapse="true"}
-```{r}
-#| label: The End of Session
-#| title: 'Какие пакеты использовались'
-#| comment: ''
-
-# The End of Session
-
-devtools::session_info()
-
-Sys.time()
-
-```
-:::
-
-# Data & Map {orientation="columns" scrolling="true"}
+## Row - Описание сессии {height="80%"}
 
 ::: {.card title='Рассмотрим исторические данные' width="70%"}
+
+### Column - Interaction Table {width="70%"}
 
 Теперь убедимся в деталях набора данных:
 
@@ -425,6 +420,8 @@ meteo_tbl |>
 :::
 
 ::: {.card title='Рассмотрим географический объект' width="30%"}
+
+### Column - Interaction Map {width="30%"}
 
 `{r} paste0(params$loc_name, ' (', params$loc_code, ')' )` помещается тут:
 
@@ -451,3 +448,21 @@ leaflet::leaflet() |>
 
 ```
 :::
+
+## Row - Описание сессии {height="20%"}
+
+::: {.callout-caution collapse="true"}
+```{r}
+#| label: The End of Session
+#| title: 'Какие пакеты использовались'
+#| comment: ''
+
+# The End of Session
+
+devtools::session_info()
+
+Sys.time()
+
+```
+:::
+

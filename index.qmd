@@ -263,8 +263,8 @@ list(
 
 ```{r}
 #| content: valuebox
-#| label: Mean Annual Precipitation
-#| title: Mean Annual Precipitation
+#| label: Average Annual Precipitation
+#| title: Average Annual Precipitation
 
 list(
   icon = 'cloud-rain',
@@ -336,11 +336,12 @@ pillar::glimpse(meteo_tbl, width = 120)
 
 ### Column - Результаты {width="40%"}
 
-#### Row - Диаграмма {height="80%"}
+#### Row - Diagram of Monthly Air Temperatures and Precipitation {height="100%"}
 
 ```{r}
 #| label: Union Air Temperature & Precipitation Chart
-#| title: 'Температура воздуха по среднемесячным температурам воздуха и выпадению осадкам'
+#| title: 'Diagram of Monthly Air Temperatures and Precipitation'
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 # Функция для создания графика по среднемесячным температурам воздуха и выпадению осадкам
 Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
@@ -349,9 +350,11 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
       dplyr::filter(date >= from & date <= to) %>% 
         dplyr::group_by(Month) %>%
           dplyr::summarise( high_month = base::max(daily_temperature_2m_max, na.rm = TRUE),
-                            max_day   = base::max(daily_temperature_2m_mean),
+                            max_day   = base::max(daily_temperature_2m_mean, na.rm = TRUE),
+                            avg_max_day   = base::mean(daily_temperature_2m_max, na.rm = TRUE),
                             median = stats::median(daily_temperature_2m_mean, na.rm = TRUE),
-                            min_day  = base::min(daily_temperature_2m_mean),
+                            avg_min_day   = base::mean(daily_temperature_2m_min, na.rm = TRUE),
+                            min_day  = base::min(daily_temperature_2m_mean, na.rm = TRUE),
                             low_month = base::min(daily_temperature_2m_min, na.rm = TRUE), .groups = 'drop' ) %>% 
       dplyr::full_join( x = ., y = data %>% 
         dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
@@ -363,37 +366,81 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
         by = dplyr::join_by( Month == Month) )
 
   legend_labels <- c(
-    high_month = "Maximum of the \nhighest temperature \nof the Month",
-    max_day = "Maximum average \nDaily temperature",
-    median = "Median average \nDaily temperature",
-    min_day = "Minimum average \nDaily temperature",
-    low_month = "Minimum of the \nlowest temperature \nof the Month")
+   # Precipitation = 'Average Precipitation, mm',
+    high_month = "Maximum of the \nhighest temperature",
+    max_day = "Maximum of Mean \nDaily temperature",
+    avg_max_day = "Average of \nDaily temperature \nMaximum",
+    median = "Median of Mean \nDaily temperature",
+    avg_min_day = "Average of \nDaily temperature \nMinimum",
+    min_day = "Minimum of Mean \nDaily temperature",
+    low_month = "Minimum of the \nlowest temperature"
+    )
   
-  data %>%
-    tidyr::pivot_longer(-c(Month, Precipitation), names_to = 'variable', values_to = 'value') %>%
-    ggplot2::ggplot( data = . ) +
-      ggplot2::geom_col( data = data, aes(x = Month, y = Precipitation), fill = 'paleturquoise' ) +
-      ggplot2::geom_line(aes(x = Month, y = value / 0.0825, group = variable, color = variable, linetype = variable)) +
-      ggplot2::geom_point( data = data, aes(x = Month, y = median / 0.0825), color = 'coral' ) +
-      # ggplot2::geom_segment(data = data, aes(x = Month, xend = Month, y = low_month, yend = high_month, color = greenRed), size = 0.1) +
-      ggplot2::geom_text(data = data, aes(label = round(median, 1), x = Month, y = median / 0.0825), size = 3, nudge_x = -0.3, nudge_y = 9, color = 'coral') +
-      ggplot2::scale_color_manual( values = c(max_day = 'red', min_day = 'blue', high_month = 'red', low_month = 'blue', median = 'coral'), labels = legend_labels ) +
-      ggplot2::scale_linewidth_manual( values = c(max_day = 0.1, min_day = 0.1, high_month = 1, low_month = 1, median = 2) ) +
-      ggplot2::scale_linetype_manual(values = c(max_day = 'dashed', min_day = 'dashed', high_month = 'dotted', low_month = 'dotted', median = 'solid'), labels = legend_labels ) +
-      ggplot2::scale_y_continuous(name = 'Average Month Precipitation, mm', sec.axis = ggplot2::sec_axis(transform = ~ . * 0.0825, name = 'Air Temperature, °C')) +
-      ggplot2::labs(title = Title, color = 'Variable', linetype = 'Time Line') +
-      ggplot2::theme_minimal() +
-      # ggplot2::lims(y = c(16, NA)) +
-      # ggplot2::coord_cartesian(ylim = c(15, NA)) +
-      ggplot2::theme(axis.title.y = ggplot2::element_blank(),  
-                     legend.position = 'right', legend.text = element_text(size = 9),
-                     axis.title.x = ggplot2::element_blank(),
-                     axis.text.x = ggplot2::element_text(size = 14, vjust = 0.5),
-                     axis.text.y = ggplot2::element_text(size = 14, vjust = 0.5, hjust = 1),
-                     plot.title = ggplot2::element_text(hjust = 0.5)) +
-      ggplot2::guides(color = guide_legend(title = ''), linetype = guide_legend(title = ''))
+  legend_colors <- c(high_month = 'red', max_day = 'red', avg_max_day = 'coral', median = 'coral', avg_min_day = 'blue', min_day = 'blueviolet', low_month = 'blueviolet')
+  
+  legend_shapes <- c(high_month = 24, max_day = 20, avg_max_day = 20, median = 19, avg_min_day = 20, min_day = 20, low_month = 25)
+  
+  # Automatically defining the scaling function for Two axes of Y - https://finchstudio.io/blog/ggplot-dual-y-axes/
+  max_first  <- max(data$Precipitation, na.rm = TRUE) # Specify max of first y axis
+  max_second <- max(data$high_month, na.rm = TRUE)    # Specify max of second y axis
+  min_first  <- 0  # min(data$Precipitation, na.rm = TRUE)     # Specify min of first y axis
+  min_second <- min(data$low_month, na.rm = TRUE) # Specify min of second y axis
+  
+  # scale and shift variables calculated based on desired mins and maxes
+  scale = (max_second - min_second)/(max_first - min_first)
+  shift = min_first - min_second
+  
+  # Function to scale secondary axis
+  scale_function <- function(x, scale, shift){
+    return ((x)*scale - shift)
+  }
+  
+  # Function to scale secondary variable values
+  inv_scale_function <- function(x, scale, shift){
+    return ((x + shift)/scale)
+  }
+  
+  data_long <- 
+    data %>%
+      tidyr::pivot_longer( -c(Month, Precipitation), names_to = 'variable', values_to = 'value' ) %>%
+        dplyr::mutate(variable = factor(variable, levels = names(legend_labels)), Precipitation = NULL)
+  
+  ggplot2::ggplot( data = data_long ) +
+    ggplot2::geom_col( data = data, aes(x = Month, y = Precipitation, fill = 'Precipitation') ) +
+    ggplot2::geom_text(data = data, aes(label = round(Precipitation, 0), x = Month, y = max(data$Precipitation) * 0.05), size = 3, color = 'cornflowerblue') +
+    # ggplot2::geom_segment(data = data, aes(x = Month, xend = Month, y = inv_scale_function(low_month, scale, shift), yend = inv_scale_function(high_month, scale, shift)), linewidth = 1, color = 'gold', linetype = 'dashed') +
+    ggplot2::geom_line( aes(x = Month, y = inv_scale_function(value, scale, shift), group = variable, color = variable, linetype = variable) ) +  
+    ggplot2::geom_point( data = data_long %>% dplyr::filter(variable %in% c('high_month', 'median', 'low_month'))
+                       , aes(x = Month, y = inv_scale_function(value, scale, shift), 
+                             color = variable, shape = variable) ) +
+    ggplot2::geom_text(data = data, aes(label = round(median, 1), x = Month, y = inv_scale_function(median, scale, shift)), size = 3, nudge_x = -0.3, nudge_y = 9, color = 'coral') +
+    
+    ggplot2::scale_fill_manual( values = c(Precipitation = '#a9c4f5'), labels=c(Precipitation = 'Precipitation, mm') ) +
+    ggplot2::scale_color_manual( values = legend_colors, labels = legend_labels ) +
+    # ggplot2::scale_fill_manual( values = legend_colors, labels = legend_labels ) +
+    ggplot2::scale_shape_manual( values = legend_shapes, labels = legend_labels ) +
+    # ggplot2::scale_linewidth_manual( values = c(high_month = 0.5, max_day = 0.1, avg_max_day = 1, median = 2, avg_min_day = 1, min_day = 0.1, low_month = 0.5), labels = legend_labels ) +
+    ggplot2::scale_linetype_manual( values = c(high_month = 'blank', max_day = 'dashed', avg_max_day = 'longdash', median = 'solid', avg_min_day = 'longdash', min_day = 'dashed', low_month = 'blank'), labels = legend_labels ) +
+    
+    ggplot2::scale_y_continuous(name = 'Average Month Precipitation, mm', limits = c(min_first, max_first), breaks = seq(0, 2000, by = ifelse(max_first - min_first > 200, 50, 25)), sec.axis = ggplot2::sec_axis(~scale_function(., scale, shift), breaks = seq(-40, 40, by = ifelse(max_second - min_second > 30, 5, 2)), name = 'Air Temperature, °C')) +
+    ggplot2::labs(title = Title) + # , color = 'Color', fill = 'Fill', shape = 'Shape', linetype = 'Line Type') +
+    ggplot2::theme_minimal() +
+    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
+                    legend.position = 'right', legend.text = element_text(size = 7),
+                    legend.title = element_text(size = 8), 
+                    axis.title.x = ggplot2::element_blank(),
+                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
+                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'cornflowerblue'),
+                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'cornflowerblue'),
+                    axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
+                    axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral') ) +
+    ggplot2::guides( fill = ggplot2::guide_legend(title = NULL, order = 1), 
+              color = ggplot2::guide_legend(title = 'Air Temperature, °C', override.aes = list(shape = legend_shapes)), 
+                     shape = 'none', 
+                     linetype = ggplot2::guide_legend(title = 'Air Temperature, °C') )
 
-}    # The End of function `candleStick_plot()`
+}    # The End of function `Union_plot()`
 
 # Пример использования функции
 Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
@@ -427,6 +474,7 @@ meteo_tbl |>
 
 ```{r}
 #| label: Interaction Map
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 leaflet::leaflet() |> 
   # leaflet::addTiles(group = "OSM (default)") |>

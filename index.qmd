@@ -202,9 +202,12 @@ ONI_tbl <- tibble::tribble(
   "2023-02-01", "2023-04-30", "Neutral",
   "2023-05-01", "2024-04-30", "El Niño",
   "2024-05-01", "2024-12-31", "Neutral"
-) %>% 
+) |>
   dplyr::mutate(`Start Month` = as.Date(`Start Month`, tz = 'Asia/Ho_Chi_Minh'),
                 `Finish Month` = as.Date(`Finish Month`, tz = 'Asia/Ho_Chi_Minh'))
+
+MonthDays_tbl <- 
+   tibble::tibble(Month = month.abb, Days = c(31, 28.24, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31))
 
 ```
 
@@ -212,22 +215,70 @@ ONI_tbl <- tibble::tribble(
 #| label: Loading dataset
 #| title: Retrieve historical weather data from the Open-Meteo API
 
-prq_filename <- paste0('data/meteo_',  params$loc_code, '.zst.parquet')
+prq_daily_filename <- paste0('data/meteo_daily_',  params$loc_code, '.zst.parquet')
+prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zst.parquet')
 
-# meteo_df <- # obtain Weather history for Location over 1950
+# meteo_daily_df <- # obtain Weather history for Location over 1950
 #   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
 #                               location = params$loc_coordinats,
 #                               start = params$Start_Dat,
 #                               end = params$Finish_Date,
 #                               daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
+# 
+# meteo_hourly_df <- # obtain Weather history for Location over 1950
+#   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
+#                               location = params$loc_coordinats,
+#                               start = params$Start_Dat,
+#                               end = params$Finish_Date,
+#                               hourly = c("temperature_2m", "relative_humidity_2m", "dew_point_2m", "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", "weather_code", "pressure_msl", "cloud_cover", "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day", "sunshine_duration", "shortwave_radiation") )
 
-if (exists('meteo_df') == TRUE) {
-  arrow::write_parquet( meteo_df, prq_filename, compression = 'zstd', compression_level = 6) 
+if (exists('meteo_daily_df') == TRUE) {
+  arrow::write_parquet( meteo_daily_df, prq_daily_filename, compression = 'zstd', compression_level = 6) 
 } else {
-  meteo_df = arrow::read_parquet(file = prq_filename)
-}     # The End of if (exists('meteo_df') == TRUE)
+  meteo_daily_df = arrow::read_parquet(file = prq_daily_filename)
+}     # The End of if (exists('meteo_daily_df') == TRUE)
+
+if (exists('meteo_hourly_df') == TRUE) {
+  arrow::write_parquet( meteo_hourly_df, prq_hourly_filename, compression = 'zstd', compression_level = 6) 
+} else {
+  meteo_hourly_df = arrow::read_parquet(file = prq_hourly_filename)
+}     # The End of if (exists('meteo_hourly_df') == TRUE)
 
 dur <- paste0( format(as.Date(params$Start_Date), '%b %Y'), ' - ', format(as.Date(params$Finish_Date), '%b %Y') )
+
+```
+
+```{r}
+#| label: Merge dataset
+#| expandable: false
+
+#### I. Merge Weather Dataset with WCO Codes Dictionary
+
+meteo_tbl <- 
+  dplyr::inner_join(
+    x = meteo_daily_df,
+    y = dplyr::mutate( meteo_hourly_df # Month = factor(lubridate::month(datetime), labels = month.abb)
+                     , date = lubridate::as_date(datetime)
+                     , cloud_cover = dplyr::if_else(hourly_cloud_cover >= 80, 3, 
+                                                    dplyr::if_else(hourly_cloud_cover < 20, 1, 2)) ) |>
+          dplyr::group_by(date) |> # Month, 
+          # dplyr::summarise(dplyr::across(dplyr::one_of('hourly_temperature_2m', 'hourly_apparent_temperature'),
+          #                      list(max = max, min = min, mean = mean), .names = "{.col}_{.fn}"), .groups = 'drop') |>
+          #   dplyr::rename_with(~ gsub('^hourly_', 'daily_', .), dplyr::starts_with('hourly_'))
+            dplyr::summarise( cloud_cover = dplyr::if_else( mean(cloud_cover) == 1, 'Sunny', dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Cloudy'))
+                            , daily_relative_humidity_2m = mean(hourly_relative_humidity_2m, na.rm = TRUE)
+                            , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) ),
+    by = dplyr::join_by( date == date )
+  ) |>
+    dplyr::left_join( y = WCO_Codes_tbl
+                    , by = c('daily_weather_code' = 'weather_code'), relationship = 'many-to-one' ) |> 
+      dplyr::left_join( y = ONI_tbl, 
+                       by = dplyr::join_by( dplyr::between(date, `Start Month`, `Finish Month`)),
+                       relationship = 'many-to-many') |>
+        dplyr::select( -tidyselect::ends_with(' Month') ) |>
+    dplyr::mutate(Month = factor(lubridate::month(date), labels = month.abb))
+
+remove(meteo_daily_df, WCO_Codes_tbl, ONI_tbl)
 
 ```
 
@@ -257,7 +308,7 @@ list(
 list(
   icon = 'thermometer-sun',
   color = 'success',
-  value = round( mean(meteo_df$daily_temperature_2m_mean, na.rm = TRUE), digi = 1 ) |> paste0('°C')
+  value = round( mean(meteo_tbl$daily_temperature_2m_mean, na.rm = TRUE), digi = 1 ) |> paste0('°C')
     )
 ```
 
@@ -269,7 +320,7 @@ list(
 list(
   icon = 'cloud-rain',
   color = 'blue',
-  value = format( round(mean(meteo_df$daily_precipitation_sum, na.rm = TRUE) * 365.24, digi = 0), big.mark = ' ') |> paste('mm')
+  value = format( round(mean(meteo_tbl$daily_precipitation_sum, na.rm = TRUE) * 365.24, digi = 0), big.mark = ' ') |> paste('mm')
    )
 ```
 
@@ -282,7 +333,7 @@ list(
 list(
   icon = 'sun',
   color = '#fffacd',
-  value = round(meteo_df |> dplyr::filter(daily_precipitation_sum == 0) |> nrow() / nrow(meteo_df) * 365.24) |> paste('Days')
+  value = round(meteo_tbl |> dplyr::filter(daily_precipitation_sum == 0) |> nrow() / nrow(meteo_tbl) * 365.24) |> paste('Days')
    )
 ```
 
@@ -295,51 +346,24 @@ list(
 Исторические данные могут загружаться напрямую с помошью пакета [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) из [**Open-Meteo API**](https://open-meteo.com/en/docs), так как в нем имеется возможность взять нижеследующие **посуточные** переменные:
 
 | Наименование | Переменная | Ед. изм. |
-|--------------------------------|:-----------:|:----:|
+|-----------------------------------------|:--------------:|:-------------:|
 | температура воздуха на уровне 2 м | temperature_2m | °C |
 | относительная влажность на уровне 2 м | relative_humidity_2m | \% |
 | скорость ветра на уровне 10 м | wind_speed_10m | км/час |
 | скорость порывов ветра на уровне 10 м | wind_gusts_10m | км/час |
 | продолжительность пребывания Солнца над горизонтом | daylight_duration | сек |
-| продолжительность освещения незатемненным Солнцем | sunshine_duration | сек |
+| продолжительность тепловой радиации Солнца свыше 120 Вт/м² по ВМО | sunshine_duration | сек |
 | атмосферные осадки | precipitation | мм |
 | тепловое радиация Солнца | shortwave_radiation | Вт/м² |
-| потенциальное испарение с поверхности открытой воды по ФАО | et0_fao_evapotranspiration | мм/день |
+| эталонное испарение хорошо орошаемого травяного поля по ФАО | et0_fao_evapotranspiration | мм/день |
 
 </small>
 
-### Column - Merge datasets
+### Column -
 
-::: {.card title="Набор данных" width="40%" fill="false"}
-Structure of Dataset
-
+:::: {.card title="Набор данных" width="40%" fill="false"}
 ```{r}
-#| label: Merge dataset
-#| expandable: false
-
-#### I. Merge Weather Dataset with WCO Codes Dictionary
-
-meteo_tbl <- 
-  meteo_df %>% 
-    dplyr::left_join( x = ., y = WCO_Codes_tbl
-                    , by = c('daily_weather_code' = 'weather_code'), relationship = 'many-to-one' ) %>% 
-      dplyr::left_join(x = ., y = ONI_tbl, 
-                       by = dplyr::join_by( dplyr::between(date, `Start Month`, `Finish Month`)),
-                       relationship = 'many-to-many') %>%
-        dplyr::select( -tidyselect::ends_with(' Month') ) %>% 
-    dplyr::mutate(Month = factor(lubridate::month(date), , labels = month.abb))
-
-pillar::glimpse(meteo_tbl, width = 120)
-
-```
-:::
-
-### Column - Результаты {width="40%"}
-
-#### Row - Diagram of Monthly Air Temperatures and Precipitation {height="100%"}
-
-```{r}
-#| label: Union Air Temperature & Precipitation Chart
+#| label: Union Air Temperature & Precipitation Chart First
 #| title: 'Diagram of Monthly Air Temperatures and Precipitation'
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
@@ -447,14 +471,91 @@ Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date
 
 ```
 
-# Data & Map {orientation="rows" scrolling="true"}
 
-## Row - Описание сессии {height="80%"}
+::::
 
-::: {.card title='Рассмотрим исторические данные' width="70%"}
+:::: {.cards}
+::::
 
-### Column - Interaction Table {width="70%"}
 
+### Column - Результаты {width="40%"}
+
+#### Row - Diagram of Monthly Air Temperatures and Precipitation {height="100%"}
+
+```{r}
+#| label: Cloudy, Sunny and Precipitation Days Chart
+#| title: 'Diagram of Cloudy, Sunny and Precipitation Days'
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Функция для создания графика по дням, когда было Облачно, Солнечно и Дням осадков
+Cloudy_Sunny_Precipitation_Day_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
+  
+  data <- 
+    data %>% 
+      dplyr::filter(date >= from & date <= to) %>% 
+    
+    # Среднемесячное количество Ясных, Облачных и Пасмурных дней
+    janitor::tabyl(Month, cloud_cover) |> 
+      janitor::adorn_percentages(denominator = 'row') |> 
+        janitor::untabyl() |> 
+      dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+        dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+          dplyr::select(-Days) |>
+    
+    dplyr::inner_join(
+    # Среднемесячное количество Дней выпадения атмосферных осадков
+      dplyr::left_join( x = dplyr::group_by(data, Month) |> dplyr::count(name = 'All_Days')
+                        , y = dplyr::filter(data, daily_precipitation_sum > 0) |>
+                            dplyr::group_by(Month) |> 
+                            dplyr::count(name = 'Precipitation_Days')
+                        , by = dplyr::join_by(Month == Month) ) |>
+          dplyr::transmute(Month, Precipitation_Days_Share = Precipitation_Days / All_Days) |>
+          dplyr::inner_join( MonthDays_tbl, by = dplyr::join_by(Month == Month) )|>
+          dplyr::transmute(Month, Precipitation_Days = Precipitation_Days_Share * Days)
+    , by = dplyr::join_by(Month == Month) )
+
+  data_long <- 
+    tidyr::pivot_longer( data,
+                         cols = c(Sunny, Cloudy, Overcast),
+                         names_to = 'Cloudiness',
+                         values_to = 'value' ) |>
+      dplyr::mutate( Month = factor(Month, labels = month.abb)
+                   , Precipitation_Days = NULL
+                   , Cloudiness = factor(Cloudiness, levels = c('Overcast', 'Cloudy', 'Sunny')) )
+
+  legend_colors <- c(Sunny = 'yellow', Cloudy = '#dde7fb', Overcast = 'cornflowerblue')
+
+  # Построение сводной столбиковой диаграммы с наложением
+  ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Cloudiness)) +
+    ggplot2::geom_bar(stat = 'identity') +
+    ggplot2::scale_fill_manual( values = legend_colors ) +
+    ggplot2::labs(title = Title, y = 'Days', fill = 'Cloudiness') +
+    ggplot2::theme_minimal() +
+    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
+                    legend.position = 'right', legend.text = element_text(size = 7),
+                    legend.title = element_text(size = 8), 
+                    axis.title.x = ggplot2::element_blank(),
+                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
+                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'black'),
+                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'black'),
+                    # axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
+                    # axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral')
+                    ) +
+    ggplot2::guides( fill = ggplot2::guide_legend(title = NULL, order = 1), 
+                     shape = 'none', 
+                     linetype = ggplot2::guide_legend(title = 'Air Temperature, °C') )
+
+}    # The End of function `Cloudy_Sunny_Precipitation_Day_plot()`
+
+# Пример использования функции
+Cloudy_Sunny_Precipitation_Day_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+
+```
+
+# Data & Map {orientation="columns" scrolling="true"}
+
+::: {.card title="Рассмотрим табличные данные" width="70%"}
 Теперь убедимся в деталях набора данных:
 
 ```{r}
@@ -462,15 +563,13 @@ Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date
 
 meteo_tbl |>
   dplyr::select(-Weather, -Conditions) |>
-  DT::datatable(options = list(dom = 'ftp', paging = TRUE))
+  DT::datatable(options = list(dom = 'Bfrtip', paging = TRUE) )  # buttons = c('copy', 'csv', 'excel'), scrollX = TRUE,     fixedColumns = list(leftColumns = 2, rightColumns = 1), 
+
 ```
 :::
 
-::: {.card title='Рассмотрим географический объект' width="30%"}
-
-### Column - Interaction Map {width="30%"}
-
-`{r} paste0(params$loc_name, ' (', params$loc_code, ')' )` помещается тут:
+:::: {.card title="Рассмотрим местоположение географического объекта" width="30%"}
+`{r} Title` помещается тут:
 
 ```{r}
 #| label: Interaction Map
@@ -495,9 +594,6 @@ leaflet::leaflet() |>
 #                      lng2 = params$loc_coordinats['longitude'] + 0.2, lat2 = params$loc_coordinats['latitude'] + 0.2)
 
 ```
-:::
-
-## Row - Описание сессии {height="20%"}
 
 ::: {.callout-caution collapse="true"}
 ```{r}
@@ -513,4 +609,4 @@ Sys.time()
 
 ```
 :::
-
+::::

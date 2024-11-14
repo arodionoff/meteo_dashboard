@@ -7,9 +7,9 @@ author:
 date_start: "7 November 2024"
 # orientation: columns
 params:
-  loc_name: 'Phuquoc Island'  # 'Almaty City' 
-  loc_code:  'PQC'# 'ALA'
-  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
+  loc_name:  'Oymyakon Vilage'
+  loc_code:  'OYM'
+  loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
   Start_Date:  1994-11-01
   Finish_Date: 2024-11-01
 ---
@@ -19,6 +19,9 @@ params:
 #| include: false
 # Global options
 
+# https://www.meteoblue.com/ru/%D0%BF%D0%BE%D0%B3%D0%BE%D0%B4%D0%B0/historyclimate/climatemodelled/%d0%90%d0%bb%d0%bc%d0%b0%d1%82%d1%8b_%d0%9a%d0%b0%d0%b7%d0%b0%d1%85%d1%81%d1%82%d0%b0%d0%bd_1526384
+
+# https://open-meteo.com/en/docs/historical-weather-api#latitude=63.4622&longitude=142.7949&start_date=2020-01-01&end_date=2024-09-15&hourly=&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean,apparent_temperature_max,apparent_temperature_min,apparent_temperature_mean,sunrise,sunset,daylight_duration,sunshine_duration,precipitation_sum,rain_sum,snowfall_sum,precipitation_hours,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,shortwave_radiation_sum,et0_fao_evapotranspiration&timezone=auto
 ```
 
 # Historical Data
@@ -202,12 +205,21 @@ ONI_tbl <- tibble::tribble(
   "2023-02-01", "2023-04-30", "Neutral",
   "2023-05-01", "2024-04-30", "El Niño",
   "2024-05-01", "2024-12-31", "Neutral"
-) |>
+) %>% 
   dplyr::mutate(`Start Month` = as.Date(`Start Month`, tz = 'Asia/Ho_Chi_Minh'),
                 `Finish Month` = as.Date(`Finish Month`, tz = 'Asia/Ho_Chi_Minh'))
-
 MonthDays_tbl <- 
    tibble::tibble(Month = month.abb, Days = c(31, 28.24, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31))
+
+# Function to scale secondary axis
+scale_function <- function(x, scale, shift){
+  return ((x)*scale - shift)
+}
+
+# Function to scale secondary variable values
+inv_scale_function <- function(x, scale, shift){
+  return ((x + shift)/scale)
+}
 
 ```
 
@@ -239,12 +251,14 @@ if (exists('meteo_daily_df') == TRUE) {
 }     # The End of if (exists('meteo_daily_df') == TRUE)
 
 if (exists('meteo_hourly_df') == TRUE) {
-  arrow::write_parquet( meteo_hourly_df, prq_hourly_filename, compression = 'zstd', compression_level = 6) 
+  arrow::write_parquet( meteo_hourly_df, prq_hourly_filename, compression = 'zstd', compression_level = 6)
 } else {
   meteo_hourly_df = arrow::read_parquet(file = prq_hourly_filename)
 }     # The End of if (exists('meteo_hourly_df') == TRUE)
 
 dur <- paste0( format(as.Date(params$Start_Date), '%b %Y'), ' - ', format(as.Date(params$Finish_Date), '%b %Y') )
+
+remove(prq_daily_filename, prq_hourly_filename)
 
 ```
 
@@ -265,7 +279,7 @@ meteo_tbl <-
           # dplyr::summarise(dplyr::across(dplyr::one_of('hourly_temperature_2m', 'hourly_apparent_temperature'),
           #                      list(max = max, min = min, mean = mean), .names = "{.col}_{.fn}"), .groups = 'drop') |>
           #   dplyr::rename_with(~ gsub('^hourly_', 'daily_', .), dplyr::starts_with('hourly_'))
-            dplyr::summarise( cloud_cover = dplyr::if_else( mean(cloud_cover) == 1, 'Sunny', dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Cloudy'))
+            dplyr::summarise( cloud_cover = dplyr::if_else( mean(cloud_cover) == 1, 'Sunny', dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Partly Cloudy'))
                             , daily_relative_humidity_2m = mean(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) ),
     by = dplyr::join_by( date == date )
@@ -278,7 +292,7 @@ meteo_tbl <-
         dplyr::select( -tidyselect::ends_with(' Month') ) |>
     dplyr::mutate(Month = factor(lubridate::month(date), labels = month.abb))
 
-remove(meteo_daily_df, WCO_Codes_tbl, ONI_tbl)
+# remove(meteo_hourly_df, meteo_daily_df, WCO_Codes_tbl, ONI_tbl)
 
 ```
 
@@ -337,7 +351,7 @@ list(
    )
 ```
 
-## Row - Cards {height="82%"}
+## Row - Charts {height="82%"}
 
 ### Sidebar - Load Dataset from OpenMeteo (Daily Weather Variables) {.card-sidebar width="20%"}
 
@@ -359,12 +373,10 @@ list(
 
 </small>
 
-### Column -
+### Column - Temperature Conditions {width="40%"}
 
-:::: {.card title="Набор данных" width="40%" fill="false"}
 ```{r}
-#| label: Union Air Temperature & Precipitation Chart First
-#| title: 'Diagram of Monthly Air Temperatures and Precipitation'
+#| label: Union Air Temperature & Precipitation Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 # Функция для создания графика по среднемесячным температурам воздуха и выпадению осадкам
@@ -372,6 +384,8 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
   data <- 
     data %>% 
       dplyr::filter(date >= from & date <= to) %>% 
+
+    # Среднемесячная максимальная, средняя и минимальная температура воздуха
         dplyr::group_by(Month) %>%
           dplyr::summarise( high_month = base::max(daily_temperature_2m_max, na.rm = TRUE),
                             max_day   = base::max(daily_temperature_2m_mean, na.rm = TRUE),
@@ -380,6 +394,8 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
                             avg_min_day   = base::mean(daily_temperature_2m_min, na.rm = TRUE),
                             min_day  = base::min(daily_temperature_2m_mean, na.rm = TRUE),
                             low_month = base::min(daily_temperature_2m_min, na.rm = TRUE), .groups = 'drop' ) %>% 
+    
+    # Среднемесячное количество атмосферных осадков
       dplyr::full_join( x = ., y = data %>% 
         dplyr::mutate( period = sprintf("%2.0f-%02.0f", lubridate::year(date) - 2000, lubridate::month(date)) ) %>%
           dplyr::group_by(period) %>%
@@ -414,23 +430,13 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
   scale = (max_second - min_second)/(max_first - min_first)
   shift = min_first - min_second
   
-  # Function to scale secondary axis
-  scale_function <- function(x, scale, shift){
-    return ((x)*scale - shift)
-  }
-  
-  # Function to scale secondary variable values
-  inv_scale_function <- function(x, scale, shift){
-    return ((x + shift)/scale)
-  }
-  
   data_long <- 
     data %>%
       tidyr::pivot_longer( -c(Month, Precipitation), names_to = 'variable', values_to = 'value' ) %>%
         dplyr::mutate(variable = factor(variable, levels = names(legend_labels)), Precipitation = NULL)
   
   ggplot2::ggplot( data = data_long ) +
-    ggplot2::geom_col( data = data, aes(x = Month, y = Precipitation, fill = 'Precipitation') ) +
+    ggplot2::geom_col(data = data, aes(x = Month, y = Precipitation, fill = 'Precipitation')) +
     ggplot2::geom_text(data = data, aes(label = round(Precipitation, 0), x = Month, y = max(data$Precipitation) * 0.05), size = 3, color = 'cornflowerblue') +
     # ggplot2::geom_segment(data = data, aes(x = Month, xend = Month, y = inv_scale_function(low_month, scale, shift), yend = inv_scale_function(high_month, scale, shift)), linewidth = 1, color = 'gold', linetype = 'dashed') +
     ggplot2::geom_line( aes(x = Month, y = inv_scale_function(value, scale, shift), group = variable, color = variable, linetype = variable) ) +  
@@ -445,9 +451,9 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
     ggplot2::scale_shape_manual( values = legend_shapes, labels = legend_labels ) +
     # ggplot2::scale_linewidth_manual( values = c(high_month = 0.5, max_day = 0.1, avg_max_day = 1, median = 2, avg_min_day = 1, min_day = 0.1, low_month = 0.5), labels = legend_labels ) +
     ggplot2::scale_linetype_manual( values = c(high_month = 'blank', max_day = 'dashed', avg_max_day = 'longdash', median = 'solid', avg_min_day = 'longdash', min_day = 'dashed', low_month = 'blank'), labels = legend_labels ) +
+    ggplot2::scale_y_continuous( name = 'Average Month Precipitation, mm', limits = c(min_first, max_first), breaks = seq(0, 2000, by = ifelse(max_first - min_first > 200, 50, 25)), sec.axis = ggplot2::sec_axis( transform = ~scale_function(., scale, shift), breaks = seq(-40, 40, by = ifelse(max_second - min_second > 30, 5, 2)), name = 'Air Temperature, °C') ) +
     
-    ggplot2::scale_y_continuous(name = 'Average Month Precipitation, mm', limits = c(min_first, max_first), breaks = seq(0, 2000, by = ifelse(max_first - min_first > 200, 50, 25)), sec.axis = ggplot2::sec_axis(~scale_function(., scale, shift), breaks = seq(-40, 40, by = ifelse(max_second - min_second > 30, 5, 2)), name = 'Air Temperature, °C')) +
-    ggplot2::labs(title = Title) + # , color = 'Color', fill = 'Fill', shape = 'Shape', linetype = 'Line Type') +
+    ggplot2::labs(title = 'Monthly Air Temperatures and Precipitation') + # , color = 'Color', fill = 'Fill', shape = 'Shape', linetype = 'Line Type') +
     ggplot2::theme_minimal() +
     # ggplot2::coord_cartesian(ylim = c(15, NA)) +
     ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
@@ -459,7 +465,7 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
                     axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'cornflowerblue'),
                     axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
                     axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral') ) +
-    ggplot2::guides( fill = ggplot2::guide_legend(title = NULL, order = 1), 
+    ggplot2::guides( fill = ggplot2::guide_legend(title = NULL), 
               color = ggplot2::guide_legend(title = 'Air Temperature, °C', override.aes = list(shape = legend_shapes)), 
                      shape = 'none', 
                      linetype = ggplot2::guide_legend(title = 'Air Temperature, °C') )
@@ -471,24 +477,103 @@ Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date
 
 ```
 
+```{r}
+#| label: Distribution of Maximum Temperatures by Day
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
-::::
+# Функция для создания графика Распределение Максимальных температур по дням Месяцев
+Maximum_Temperatures_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
+  
+  data <- 
+    data %>% 
+      dplyr::filter(date >= from & date <= to) %>% 
+    
+    # Группы по Температурным градациям по дням Месяцев
+    dplyr::mutate( daily_temperature_2m_max_group = factor(base::cut(daily_temperature_2m_max, 
+                                         breaks = c(-Inf, -70, -50, seq(-32, 40, by = 4), 46, Inf), right = FALSE)) ) |>
+      janitor::tabyl(Month, daily_temperature_2m_max_group) |> 
+        janitor::adorn_percentages(denominator = 'row') |> 
+          janitor::untabyl() |> 
+      dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+        dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+          dplyr::select(-Days) |>
+  
+    dplyr::inner_join(
+    # Среднемесячное количество Дней c максимальной температурой ниже Нуля
+                       y = dplyr::mutate(data, Freezing_Days = dplyr::if_else(daily_temperature_2m_max < 0, 1, 0) ) |>
+                             dplyr::group_by(Month) |> 
+                               dplyr::summarise(Freezing_Days = mean(Freezing_Days, na.rm = TRUE )) |>
+                             dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+                               dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+                                 dplyr::select(-Days)
+                     , by = dplyr::join_by(Month == Month) )
 
-:::: {.cards}
-::::
+  Temperature_labels <- c("less -70", "-70/-50", "-50/-32", "-32/-28", "-28/-24", "-24/-20", "-20/-16", "-16/-12", "-12/-8", "-8/-4", "-4/0", "0/4", "4/8", "8/12", "12/16", "16/20", "20/24", "24/28", "28/32", "32/36", "36/40", "40/46", "more 46") |>
+      setNames( c("[-Inf,-70)", "[-70,-50)", "[-50,-32)", "[-32,-28)", "[-28,-24)", "[-24,-20)", "[-20,-16)", "[-16,-12)", "[-12,-8)", "[-8,-4)", "[-4,0)", "[0,4)", "[4,8)", "[8,12)", "[12,16)", "[16,20)", "[20,24)", "[24,28)", "[28,32)", "[32,36)", "[36,40)", "[40,46)", "[46, Inf)") )
+  
+  data_long <- 
+    tidyr::pivot_longer( data,
+                         cols = -c(Month, Freezing_Days),
+                         names_to = 'Temperatures',
+                         values_to = 'value' ) |>
+      dplyr::mutate( Month = factor(Month, levels = month.abb)
+                   , Freezing_Days = dplyr::if_else(Freezing_Days == 0, NA_real_, Freezing_Days)
+                   , Temperatures = factor(Temperatures, levels = rev(names(data)[c(-1, -ncol(data))]),
+                                           labels = rev(Temperature_labels[ names(data)[c(-1, -ncol(data))] ])) )
 
+  NCol <- ifelse(names(data) |> length() > 10, 2L, 1L)  # Кол-во колонок при выводе легенды
+  
+  legend_colors <- c(`more 46` = "#8B0A50", `40/46` = "#B02F50", `36/40` = "#D55450", 
+`32/36` = "#FA7A50", `28/32` = "#FF9739", `24/28` = "#FFB31F", 
+`20/24` = "#FFCF06", `16/20` = "#C1E000", `12/16` = "#70ED00", 
+`8/12` = "#1EFA00", `4/8` = "#00FF33", `0/4` =  "#00FF84", `-4/0` = "#00F7F7",
+`-8/-4` = "#08C3CA", `-12/-8` = "#1EABC2", `-16/-12` = "#3594BA", 
+`-20/-16` = "#4077AF", `-24/-20` = "#294D9F", `-28/-24` = "#13248E", 
+`-32/-28` = "#050083", `-50/-32` = "#35009D", `-70/-50` = "#6400B8", 
+`less -70` = "#9400D3")
+    # grDevices::colorRampPalette(c("deeppink4", "coral", "gold", "green", "cyan", "cyan3", "steelblue", "navy", "darkviolet"))(26)[-13:-15] |>
+    # setNames( rev(Temperature_labels) )
+
+  # Построение сводной столбиковой диаграммы с наложением
+  ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Temperatures)) +
+    ggplot2::geom_col(color = 'white') +
+    ggplot2::geom_line(aes(x = Month, y = Freezing_Days, color = 'Freezing_Days'), group = 1, linewidth = 0.7) +
+    ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Freezing_Days, .keep_all = TRUE), aes(label = round(Freezing_Days, 1), x = Month, y = Freezing_Days + 1.5), size = 3, color = 'steelblue4') +
+    
+    ggplot2::scale_fill_manual( values = legend_colors, labels = Temperature_labels, name = 'Temperature Bins, °C' ) +
+    ggplot2::scale_color_manual( values = c(Freezing_Days = 'steelblue3'), labels = c(Freezing_Days = 'Freezing \nDays') ) +
+    
+    ggplot2::labs(title = 'Maximum Temperatures & Freezing Days by Months', y = 'Days') + # , fill = 'Temperatures', color = 'Freezing Days') +
+    ggplot2::theme_minimal() +
+    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
+                    legend.position = 'right', legend.text = element_text(size = 7),
+                    legend.title = element_text(size = 8), 
+                    axis.title.x = ggplot2::element_blank(),
+                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
+                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'black'),
+                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'black'),
+                    # axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
+                    # axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral')
+                    ) +
+    ggplot2::guides( color = ggplot2::guide_legend(title = NULL, order = 1), 
+                     fill = ggplot2::guide_legend(ncol = NCol) )
+
+}    # The End of function `Maximum_Temperatures_plot()`
+
+# Пример использования функции
+Maximum_Temperatures_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+
+```
 
 ### Column - Результаты {width="40%"}
 
-#### Row - Diagram of Monthly Air Temperatures and Precipitation {height="100%"}
-
 ```{r}
 #| label: Cloudy, Sunny and Precipitation Days Chart
-#| title: 'Diagram of Cloudy, Sunny and Precipitation Days'
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 # Функция для создания графика по дням, когда было Облачно, Солнечно и Дням осадков
-Cloudy_Sunny_Precipitation_Day_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
+Cloudy_Sunny_Precipitation_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
   
   data <- 
     data %>% 
@@ -516,20 +601,24 @@ Cloudy_Sunny_Precipitation_Day_plot <- function(data, from = min(data$date, na.r
 
   data_long <- 
     tidyr::pivot_longer( data,
-                         cols = c(Sunny, Cloudy, Overcast),
+                         cols = c(Sunny, `Partly Cloudy`, Overcast),
                          names_to = 'Cloudiness',
                          values_to = 'value' ) |>
-      dplyr::mutate( Month = factor(Month, labels = month.abb)
-                   , Precipitation_Days = NULL
-                   , Cloudiness = factor(Cloudiness, levels = c('Overcast', 'Cloudy', 'Sunny')) )
+      dplyr::mutate( Month = factor(Month, levels = month.abb)
+                   , Cloudiness = factor(Cloudiness, levels = c('Overcast', 'Partly Cloudy', 'Sunny')) )
 
-  legend_colors <- c(Sunny = 'yellow', Cloudy = '#dde7fb', Overcast = 'cornflowerblue')
+  legend_colors <- c(Sunny = 'yellow', `Partly Cloudy` = '#D8D594', Overcast = 'lightskyblue4')
 
   # Построение сводной столбиковой диаграммы с наложением
   ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Cloudiness)) +
-    ggplot2::geom_bar(stat = 'identity') +
-    ggplot2::scale_fill_manual( values = legend_colors ) +
-    ggplot2::labs(title = Title, y = 'Days', fill = 'Cloudiness') +
+    ggplot2::geom_col(color = 'white') +
+    ggplot2::geom_line(aes(x = Month, y = Precipitation_Days, color = 'Precipitation_Days'), group = 1, linewidth = 0.7) +
+    ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Precipitation_Days, .keep_all = TRUE), aes(label = round(Precipitation_Days, 1), x = Month, y = Precipitation_Days + 1.5), size = 3, color = 'cornflowerblue') +
+    
+    ggplot2::scale_fill_manual( values = legend_colors, name = 'Cloudiness by \nMonths, Days' ) +
+    ggplot2::scale_color_manual( values = c(Precipitation_Days = 'cornflowerblue'), labels = c(Precipitation_Days = 'Precipitation \nDays') ) +
+    
+    ggplot2::labs(title = 'Cloudiness & Precipitation Days by Months', y = 'Days') + # , fill = 'Cloudiness', color = 'Precipitation Days') +
     ggplot2::theme_minimal() +
     # ggplot2::coord_cartesian(ylim = c(15, NA)) +
     ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
@@ -542,14 +631,91 @@ Cloudy_Sunny_Precipitation_Day_plot <- function(data, from = min(data$date, na.r
                     # axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
                     # axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral')
                     ) +
-    ggplot2::guides( fill = ggplot2::guide_legend(title = NULL, order = 1), 
-                     shape = 'none', 
-                     linetype = ggplot2::guide_legend(title = 'Air Temperature, °C') )
+    ggplot2::guides( color = ggplot2::guide_legend(title = NULL), 
+                     fill = ggplot2::guide_legend() )
 
-}    # The End of function `Cloudy_Sunny_Precipitation_Day_plot()`
+}    # The End of function `Cloudy_Sunny_Precipitation_plot()`
 
 # Пример использования функции
-Cloudy_Sunny_Precipitation_Day_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+Cloudy_Sunny_Precipitation_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+
+```
+
+```{r}
+#| label: Distribution of Precipitation Amount by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Функция для создания графика Распределение Количества Осадков по дням Месяцев 
+Precipitation_Amount_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
+  
+  data <- 
+    data %>% 
+      dplyr::filter(date >= from & date <= to) %>% 
+    
+    # Группы по Градациям Атмосферных Осадков по дням Месяцев
+    dplyr::mutate( daily_precipitation_sum_group = factor(base::cut(daily_precipitation_sum, 
+                                         breaks = c(-Inf, 0.1, 2, 5, 10, 20, 50, 100, Inf), right = FALSE)) ) |>
+      janitor::tabyl(Month, daily_precipitation_sum_group) |> 
+        janitor::adorn_percentages(denominator = 'row') |> 
+          janitor::untabyl() |> 
+      dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+        dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+          dplyr::select(-Days) |>
+  
+    dplyr::inner_join(
+    # Среднедневная продолжительность выпадения атмолсферных осадков
+                       y = data |>
+                             dplyr::group_by(Month) |> 
+                               dplyr::summarise(Precipitation_Hours = mean(daily_precipitation_hours, na.rm = TRUE))                         , by = dplyr::join_by(Month == Month) )
+
+  Precipitation_labels <- c("Dry Days", "0-2", "2-5", "5-10", "10-20", "20-50", "50-100", "more 100") |>
+    setNames( c("[-Inf,0.1)", "[0.1,2)", "[2,5)", "[5,10)", "[10,20)", "[20,50)", "[50,100)", "[100,Inf)") )
+
+  data_long <- 
+    tidyr::pivot_longer( data,
+                         cols = -c(Month, Precipitation_Hours),
+                         names_to = 'Daily_Precipitation',
+                         values_to = 'value' ) |>
+      dplyr::mutate( Month = factor(Month, levels = month.abb)
+                   , Precipitation_Hours = dplyr::if_else(Precipitation_Hours == 0, NA_real_, Precipitation_Hours)
+                   , Daily_Precipitation = factor(Daily_Precipitation, levels = rev(names(data)[c(-1, -ncol(data))]),
+                                           labels = Precipitation_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) )
+
+  NCol <- ifelse(names(data) |> length() > 10, 2L, 1L)  # Кол-во колонок при выводе легенды
+  
+  Precipitation_colors <- grDevices::colorRampPalette(c("#E4E075", "cadetblue1", "cornflowerblue", "blue" ))(12)[-c(2:5)] |>
+    setNames( Precipitation_labels )
+
+  # Построение сводной столбиковой диаграммы с наложением
+  ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Daily_Precipitation)) +
+    ggplot2::geom_col(color = 'white') +
+    ggplot2::geom_line(aes(x = Month, y = Precipitation_Hours, color = 'Precipitation_Hours'), group = 1, linewidth = 0.7) +
+    ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Precipitation_Hours, .keep_all = TRUE), aes(label = round(Precipitation_Hours, 1), x = Month, y = Precipitation_Hours + 1.5), size = 3, color = 'blue') +
+    
+    ggplot2::scale_fill_manual( values = Precipitation_colors, labels = Precipitation_labels, name = 'Precipitation \nBins, mm' ) +
+    ggplot2::scale_color_manual( values = c(Precipitation_Hours = 'blue'), labels = c(Precipitation_Hours = 'Precipitation, \nHours') ) +
+    ggplot2::scale_y_continuous( name = 'Days', sec.axis = ggplot2::sec_axis(transform = ~.*1, name = 'Hours') ) +
+    
+    ggplot2::labs(title = 'Daily Precipitation Amount & Precipitation Hours by Months') + # , fill = 'Daily_Precipitation', color = 'Precipitation Hours') +
+    ggplot2::theme_minimal() +
+    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
+                    legend.position = 'right', legend.text = element_text(size = 7),
+                    legend.title = element_text(size = 8), 
+                    axis.title.x = ggplot2::element_blank(),
+                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
+                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'black'),
+                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'black'),
+                    axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'blue'),
+                    axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'blue')
+                    ) +
+    ggplot2::guides( color = ggplot2::guide_legend(title = NULL, order = 1), 
+                     fill = ggplot2::guide_legend(ncol = NCol) )
+
+}    # The End of function `Precipitation_Amount_plot()`
+
+# Пример использования функции
+Precipitation_Amount_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
 
 ```
 
@@ -563,7 +729,7 @@ Cloudy_Sunny_Precipitation_Day_plot(data = meteo_tbl) # , from = as.Date(params$
 
 meteo_tbl |>
   dplyr::select(-Weather, -Conditions) |>
-  DT::datatable(options = list(dom = 'Bfrtip', paging = TRUE) )  # buttons = c('copy', 'csv', 'excel'), scrollX = TRUE,     fixedColumns = list(leftColumns = 2, rightColumns = 1), 
+  DT::datatable(options = list(dom = 'ftip', paging = TRUE) )  # buttons = c('copy', 'csv', 'excel'), scrollX = TRUE,     fixedColumns = list(leftColumns = 2, rightColumns = 1), 
 
 ```
 :::
@@ -573,7 +739,6 @@ meteo_tbl |>
 
 ```{r}
 #| label: Interaction Map
-#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 leaflet::leaflet() |> 
   # leaflet::addTiles(group = "OSM (default)") |>

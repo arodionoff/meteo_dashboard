@@ -24,7 +24,7 @@ params:
 # https://open-meteo.com/en/docs/historical-weather-api#latitude=63.4622&longitude=142.7949&start_date=2020-01-01&end_date=2024-09-15&hourly=&daily=weather_code,temperature_2m_max,temperature_2m_min,temperature_2m_mean,apparent_temperature_max,apparent_temperature_min,apparent_temperature_mean,sunrise,sunset,daylight_duration,sunshine_duration,precipitation_sum,rain_sum,snowfall_sum,precipitation_hours,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,shortwave_radiation_sum,et0_fao_evapotranspiration&timezone=auto
 ```
 
-# Temperature & Precipitation
+# Overview
 
 ```{r}
 #| label: Libraries
@@ -283,7 +283,8 @@ meteo_tbl <-
           #   dplyr::rename_with(~ gsub('^hourly_', 'daily_', .), dplyr::starts_with('hourly_'))
             dplyr::summarise( cloud_cover = dplyr::if_else( mean(cloud_cover) <= 1.3, 'Sunny',
                                                   dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Partly Cloudy'))
-                            , daily_relative_humidity_2m = mean(hourly_relative_humidity_2m, na.rm = TRUE)
+                            , daily_relative_humidity_2m_max = max(hourly_relative_humidity_2m, na.rm = TRUE)
+                            , daily_relative_humidity_2m_min = min(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) ),
     by = dplyr::join_by( date == date )
   ) |>
@@ -376,10 +377,10 @@ list(
 
 </small>
 
-### Column - Temperature Conditions {width="40%"}
+### Column - Overview Conditions {width="40%"}
 
 ```{r}
-#| label: Union Air Temperature & Precipitation Chart
+#| label: Overview Air Temperature & Precipitation Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 # Функция для создания графика по среднемесячным температурам воздуха и выпадению осадкам
@@ -409,7 +410,6 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
         by = dplyr::join_by( Month == Month) )
 
   legend_labels <- c(
-   # Precipitation = 'Average Precipitation, mm',
     high_month = "Maximum of the \nhighest temperature",
     max_day = "Maximum of Mean \nDaily temperature",
     avg_max_day = "Average of \nDaily temperature \nMaximum",
@@ -480,6 +480,8 @@ Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date
 
 ```
 
+### Column - Maximum Temperatures {width="40%"}
+
 ```{r}
 #| label: Distribution of Maximum Temperatures by Day
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
@@ -496,67 +498,77 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                                    Bin_colors = grDevices::colorRampPalette(c('azure', "darkgoldenrod1", "darkgoldenrod2", "darkgoldenrod3", "darkgoldenrod" ))(8),
                                    Mean_color = 'darkgoldenrod4', Second_Y_Axes_name = 'mm',
                                    Is_Scaled_Second_Y_Axes = FALSE) {
+  data <- 
+    data |>
+    dplyr::filter(date >= from & date <= to)
+  
+  data0 <- data
+  
+  data <- if (Col == 'cloud_cover') 
+    # Группы по Ясным, Облачным и Пасмурным дням по дням Месяцев
+    janitor::tabyl(data0, Month, !!rlang::sym(Col)) else {
+      # Группы по Градациям Переменной по дням Месяцев
+    dplyr::mutate(data0, Bin = factor(base::cut(!!rlang::sym(Col), breaks = Bin_breaks, right = FALSE)) ) |>
+      janitor::tabyl(Month, Bin)
+  }  # The End of if (Col == 'cloud_cover') 
+  
+  data <-
+    data %>% 
+      janitor::adorn_percentages(denominator = 'row') |>
+        janitor::untabyl() |>
+    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+        dplyr::select(-Days) 
+  
+  if (Mean_Col == 'daily_temperature_2m_max') y <- 
+    # Среднемесячное число дней  заморозки
+    dplyr::mutate(data0, Freezing_Days = dplyr::if_else(!!rlang::sym(Mean_Col) < 0, 1, 0) ) |>
+      dplyr::group_by(Month) |> 
+        dplyr::summarise(Mean = mean(Freezing_Days, na.rm = TRUE )) |>
+    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+        dplyr::select(-Days)
+  #  The End of if (Mean_Col == 'daily_temperature_2m_max')
+  
+  if (Mean_Col == 'daily_precipitation_sum') y <- 
+    # Среднемесячное количество Дней выпадения атмосферных осадков
+    dplyr::left_join( x = dplyr::group_by(data0, Month) |> dplyr::count(name = 'All_Days')
+                    , y = dplyr::filter(data0, !!rlang::sym(Mean_Col) > 0) |>
+                      dplyr::group_by(Month) |> 
+                      dplyr::count(name = 'Precipitation_Days')
+                    , by = dplyr::join_by(Month == Month) ) |>
+      dplyr::transmute(Month, Precipitation_Days_Share = Precipitation_Days / All_Days) |>
+        dplyr::inner_join( MonthDays_tbl, by = dplyr::join_by(Month == Month) )|>
+          dplyr::transmute(Month, Mean = Precipitation_Days_Share * Days)
+  #  The End of if (Mean_Col == 'daily_precipitation_sum')
+  
+  if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'daily_precipitation_sum') y <- 
+    # Среднедневная величина Переменной (Обобщенный Случай)
+    dplyr::group_by(data0, Month) |> 
+      dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE))
+  #  The End of if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'cloud_cover')
   
   data <- 
-    data %>% 
-     dplyr::filter(date >= from & date <= to) %>% 
-    
-    # { if (Col == 'cloud_cover') { 
-    # # Группы по Ясным, Облачным и Пасмурным дням по дням Месяцев
-    #   janitor::tabyl(Month, !!rlang::sym(Col))
-    #   } else { 
-    # Группы по Градациям Переменной по дням Месяцев
-        dplyr::mutate( Bin = factor(base::cut(!!rlang::sym(Col), breaks = Bin_breaks, right = FALSE)) ) |>
-          janitor::tabyl(Month, Bin) |>  # }
-    # } |>
-            janitor::adorn_percentages(denominator = 'row') |> 
-              janitor::untabyl() |> 
-      dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
-        dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
-          dplyr::select(-Days) |>
-    
-    dplyr::inner_join(
-      y = { if (Mean_Col == 'daily_temperature_2m_max') {
-        # Среднемесячное число дней  заморозки
-        dplyr::mutate(data, Freezing_Days = dplyr::if_else(!!rlang::sym(Mean_Col) < 0, 1, 0) ) |>
-                dplyr::group_by(Month) |> 
-                  dplyr::summarise(Mean = mean(Freezing_Days, na.rm = TRUE )) |>
-                    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
-                      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
-                        dplyr::select(-Days)
-      } else { if (Mean_Col == 'cloud_cover') {
-        # Среднемесячное количество Дней выпадения атмосферных осадков
-          dplyr::left_join( x = dplyr::group_by(data, Month) |> dplyr::count(name = 'All_Days')
-                          , y = dplyr::filter(data, daily_precipitation_sum > 0) |>
-                                  dplyr::group_by(Month) |> 
-                                    dplyr::count(name = 'Precipitation_Days')
-                          , by = dplyr::join_by(Month == Month) ) |>
-            dplyr::transmute(Month, Precipitation_Days_Share = Precipitation_Days / All_Days) |>
-              dplyr::inner_join( MonthDays_tbl, by = dplyr::join_by(Month == Month) )|>
-                dplyr::transmute(Month, Precipitation_Days = Precipitation_Days_Share * Days)
-      } else {
-        # Среднедневная сумма Переменной (Обобщенный Случай)
-         dplyr::group_by(data, Month) |> 
-           dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE)) }
-        }   # The End of if (Mean_Col == 'cloud_cover')
-      }   # The End of if (Mean_col == 'daily_temperature_2m_max')
-      , by = dplyr::join_by(Month == Month) )
+    dplyr::inner_join( x = data, y = y, by = dplyr::join_by(Month == Month) )
   
   data_long <- 
     tidyr::pivot_longer( data,
                          cols = -c(Month, Mean),
                          names_to = 'Bin',
                          values_to = 'value' ) |>
-      dplyr::mutate( Month = factor(Month, levels = month.abb)
-                   , Mean = if (Mean_Col == 'daily_temperature_2m_max') dplyr::if_else(Mean == 0, NA, Mean) else Mean
-                   , Bin = factor(Bin, levels = rev(names(data)[c(-1, -ncol(data))]),
-                                  labels = Bin_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) )
+    dplyr::mutate( Month = factor(Month, levels = month.abb)
+                 , Mean = if (Mean_Col == 'daily_temperature_2m_max') dplyr::if_else(Mean == 0, NA, Mean) else Mean
+                 , Bin = if (Col == 'cloud_cover') factor(Bin, levels = names(data)[c(-1, -ncol(data))]) else { 
+                                              factor(Bin, levels = rev(names(data)[c(-1, -ncol(data))]),
+                                                          labels = Bin_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) }
+                  #  The End of if (Col == 'cloud_cover') 
+                 )
   
   # Automatically defining the scaling function for Two axes of Y - https://finchstudio.io/blog/ggplot-dual-y-axes/
   max_first  <- max(data_long$value, na.rm = TRUE) # Specify max of first y axis
   max_second <- max(data$Mean, na.rm = TRUE)    # Specify max of second y axis
   min_first  <- 0  # min(data_long$value, na.rm = TRUE)     # Specify min of first y axis
-  min_second <- 0  # min(data$Mean, na.rm = TRUE) # Specify min of second y axis
+  min_second <- ifelse(Col == 'daily_relative_humidity_2m_max', 20, 0)  # min(data$Mean, na.rm = TRUE) # Specify min of second y axis
   
   # scale and shift variables calculated based on desired mins and maxes
   scale = (max_second - min_second)/(max_first - min_first)
@@ -564,7 +576,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
   
   NCol <- ifelse(names(data) |> length() > 10, 2L, 1L)  # Кол-во колонок при выводе легенды
   
-  Bin_colors <- setNames(Bin_colors, Bin_labels)
+  if (Col != 'cloud_cover') Bin_colors <- setNames(Bin_colors, Bin_labels)
   
   # Построение сводной столбиковой диаграммы с наложением
   p <- ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Bin)) +
@@ -577,7 +589,11 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
     ggplot2::scale_fill_manual( values = Bin_colors, labels = Bin_labels, name = Bin_name ) +
     ggplot2::scale_color_manual( values = c(Mean = Mean_color), labels = c(Mean = Mean_name) ) +
     ggplot2::scale_y_continuous( name = 'Days', minor_breaks  = seq(0, 31, by = 1), 
-                                 sec.axis = ggplot2::sec_axis(transform = { if (Is_Scaled_Second_Y_Axes == TRUE) ~scale_function(., scale, shift) else ~ . * 1 }, name = Second_Y_Axes_name, breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(0, ceiling( max(data$Mean) ), by = 0.5) else seq(0, 24, by = 2) }) ) +
+                                 sec.axis = ggplot2::sec_axis(transform = 
+                                { if (Is_Scaled_Second_Y_Axes == TRUE) ~scale_function(., scale, shift) else ~ . * 1 },
+                                  name = Second_Y_Axes_name, 
+                                  breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(0, ceiling( max(data$Mean) )
+                                                  , by = ifelse(Col == 'daily_relative_humidity_2m_max', 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
     
     ggplot2::labs(title = Title) + # , fill = 'Bin', color = 'Mean') +
     ggplot2::theme_minimal() +
@@ -614,80 +630,26 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
-### Column - Precipitation {width="40%"}
+# Precipitation & Relative Humidity
+
+## Row - Charts {height="100%"}
+
+### Column - Precipitation {width="50%"}
 
 ```{r}
 #| label: Cloudy, Sunny and Precipitation Days Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
-# Функция для создания графика по дням, когда было Облачно, Солнечно и Дням осадков
-Cloudy_Sunny_Precipitation_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
-  
-  data <- 
-    data %>% 
-      dplyr::filter(date >= from & date <= to) %>% 
-    
-    # Среднемесячное количество Ясных, Облачных и Пасмурных дней
-    janitor::tabyl(Month, cloud_cover) |> 
-      janitor::adorn_percentages(denominator = 'row') |> 
-        janitor::untabyl() |> 
-      dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
-        dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
-          dplyr::select(-Days) |>
-    
-    dplyr::inner_join(
-    # Среднемесячное количество Дней выпадения атмосферных осадков
-      dplyr::left_join( x = dplyr::group_by(data, Month) |> dplyr::count(name = 'All_Days')
-                        , y = dplyr::filter(data, daily_precipitation_sum > 0) |>
-                            dplyr::group_by(Month) |> 
-                            dplyr::count(name = 'Precipitation_Days')
-                        , by = dplyr::join_by(Month == Month) ) |>
-          dplyr::transmute(Month, Precipitation_Days_Share = Precipitation_Days / All_Days) |>
-          dplyr::inner_join( MonthDays_tbl, by = dplyr::join_by(Month == Month) )|>
-          dplyr::transmute(Month, Precipitation_Days = Precipitation_Days_Share * Days)
-    , by = dplyr::join_by(Month == Month) )
-
-  data_long <- 
-    tidyr::pivot_longer( data,
-                         cols = c(Sunny, `Partly Cloudy`, Overcast),
-                         names_to = 'Cloudiness',
-                         values_to = 'value' ) |>
-      dplyr::mutate( Month = factor(Month, levels = month.abb)
-                   , Cloudiness = factor(Cloudiness, levels = c('Overcast', 'Partly Cloudy', 'Sunny')) ) |>
-        dplyr::filter( value > 0 )
-
-  legend_colors <- c(Sunny = 'yellow', `Partly Cloudy` = '#D8D594', Overcast = 'lightskyblue4')
-
-  # Построение сводной столбиковой диаграммы с наложением
-  ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Cloudiness)) +
-    ggplot2::geom_col(color = 'white') +
-    ggplot2::geom_line(data = dplyr::distinct(data_long, Month, Precipitation_Days, .keep_all = TRUE), aes(x = Month, y = Precipitation_Days, color = 'Precipitation_Days'), group = 1, linewidth = 0.7) +
-    ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Precipitation_Days, .keep_all = TRUE), aes(label = round(Precipitation_Days, 1), x = Month, y = Precipitation_Days + 1.5), size = 3, color = 'cornflowerblue') +
-    
-    ggplot2::scale_fill_manual( values = legend_colors, name = 'Cloudiness by \nMonths, Days' ) +
-    ggplot2::scale_color_manual( values = c(Precipitation_Days = 'cornflowerblue'), labels = c(Precipitation_Days = 'Precipitation \nDays') ) +
-    ggplot2::scale_y_continuous(minor_breaks  = seq(0, 31, by = 1)) +
-    
-    ggplot2::labs(title = 'Cloudiness & Precipitation Days by Months', y = 'Days') + # , fill = 'Cloudiness', color = 'Precipitation Days') +
-    ggplot2::theme_minimal() +
-    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
-    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
-                    legend.position = 'right', legend.text = element_text(size = 7),
-                    legend.title = element_text(size = 8), 
-                    axis.title.x = ggplot2::element_blank(),
-                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
-                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'black'),
-                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'black'),
-                    # axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
-                    # axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral')
-                    ) +
-    ggplot2::guides( color = ggplot2::guide_legend(title = NULL), 
-                     fill = ggplot2::guide_legend() )
-
-}    # The End of function `Cloudy_Sunny_Precipitation_plot()`
-
-# Пример использования функции
-Cloudy_Sunny_Precipitation_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+# Диаграмма Распределения когда было Облачно, Солнечно и Дням осадков
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'cloud_cover', Mean_Col = 'daily_precipitation_sum',
+                       Title = 'Cloudiness & Precipitation Days by Months',
+                       Bin_name = 'Cloudiness by \nMonths, Days',
+                       Mean_name = 'Precipitation \nDays',
+                       Bin_breaks = NULL,
+                       Bin_labels = c(Sunny = 'Sunny', `Partly Cloudy` = 'Partly Cloudy', Overcast = 'Overcast'),
+                       Bin_colors = c(Sunny = 'yellow', `Partly Cloudy` = '#D8D594', Overcast = 'lightskyblue4'),
+                       Mean_color = 'cornflowerblue', Second_Y_Axes_name = 'Days')
 
 ```
 
@@ -709,7 +671,164 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
-# Radiation & Relative Humidity
+### Column - Relative Humidity {width="50%"}
+
+```{r}
+#| label: Distribution of Maximum Relative Humidity by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Функция для создания графика по дням, когда было Облачно, Солнечно и Дням осадков
+Maximum_Relative_Humidity_plot <-  function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                                   Col = 'daily_et0_fao_evapotranspiration', Mean_Col = 'daily_temperature_2m_max',
+                                   Title = 'Evapotranspiration of a well watered Grass Field & Mean by Months',
+                                   Bin_name = 'Evapotranspiration\nBins, mm',
+                                   Mean_name = 'Evapotranspiration \nMean, mm',
+                                   Bin_breaks = c(0, 0.001, 0.25, 0.5, 1, 2, 5, 10, Inf),
+                                   Bin_labels = c("0", "0-0.25", "0.25-0.5", "0.5-1", "1-2", "2-5", "5-10", "more 10")|>
+                                     setNames( c("[0,0.001)", "[0.001,0.25)", "[0.25,0.5)", "[0.5,1)", "[1,2)", "[2,5)", "[5,10)", "[10, Inf)") ),
+                                   Bin_colors = grDevices::colorRampPalette(c('azure', "darkgoldenrod1", "darkgoldenrod2", "darkgoldenrod3", "darkgoldenrod" ))(8),
+                                   Mean_color = 'darkgoldenrod4', Second_Y_Axes_name = 'mm',
+                                   Is_Scaled_Second_Y_Axes = FALSE) {
+  
+  data <- 
+    data |>
+    dplyr::filter(date >= from & date <= to)
+  
+  data0 <- data
+  
+  data <- if (Col == 'cloud_cover') 
+    # Группы по Ясным, Облачным и Пасмурным дням по дням Месяцев
+    janitor::tabyl(data0, Month, !!rlang::sym(Col)) else {
+      # Группы по Градациям Переменной по дням Месяцев
+    dplyr::mutate(data0, Bin = factor(base::cut(!!rlang::sym(Col), breaks = Bin_breaks, right = FALSE)) ) |>
+      janitor::tabyl(Month, Bin)
+  }  # The End of if (Col == 'cloud_cover') 
+  
+  data <-
+    data %>% 
+      janitor::adorn_percentages(denominator = 'row') |>
+        janitor::untabyl() |>
+    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+        dplyr::select(-Days) 
+  
+  if (Mean_Col == 'daily_temperature_2m_max') y <- 
+    # Среднемесячное число дней  заморозки
+    dplyr::mutate(data0, Freezing_Days = dplyr::if_else(!!rlang::sym(Mean_Col) < 0, 1, 0) ) |>
+      dplyr::group_by(Month) |> 
+        dplyr::summarise(Mean = mean(Freezing_Days, na.rm = TRUE )) |>
+    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+        dplyr::select(-Days)
+  #  The End of if (Mean_Col == 'daily_temperature_2m_max')
+  
+  if (Mean_Col == 'daily_precipitation_sum') y <- 
+    # Среднемесячное количество Дней выпадения атмосферных осадков
+    dplyr::left_join( x = dplyr::group_by(data0, Month) |> dplyr::count(name = 'All_Days')
+                    , y = dplyr::filter(data0, !!rlang::sym(Mean_Col) > 0) |>
+                      dplyr::group_by(Month) |> 
+                      dplyr::count(name = 'Precipitation_Days')
+                    , by = dplyr::join_by(Month == Month) ) |>
+      dplyr::transmute(Month, Precipitation_Days_Share = Precipitation_Days / All_Days) |>
+        dplyr::inner_join( MonthDays_tbl, by = dplyr::join_by(Month == Month) )|>
+          dplyr::transmute(Month, Mean = Precipitation_Days_Share * Days)
+  #  The End of if (Mean_Col == 'daily_precipitation_sum')
+  
+  if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'daily_precipitation_sum') y <- 
+    # Среднедневная величина Переменной (Обобщенный Случай)
+    dplyr::group_by(data0, Month) |> 
+      dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE))
+  #  The End of if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'cloud_cover')
+  
+  data <- 
+    dplyr::inner_join( x = data, y = y, by = dplyr::join_by(Month == Month) )
+  
+  data_long <- 
+    tidyr::pivot_longer( data,
+                         cols = -c(Month, Mean),
+                         names_to = 'Bin',
+                         values_to = 'value' ) |>
+    dplyr::mutate( Month = factor(Month, levels = month.abb)
+                 , Mean = if (Mean_Col == 'daily_temperature_2m_max') dplyr::if_else(Mean == 0, NA, Mean) else Mean
+                 , Bin = if (Col == 'cloud_cover') factor(Bin, levels = names(data)[c(-1, -ncol(data))]) else { 
+                                              factor(Bin, levels = rev(names(data)[c(-1, -ncol(data))]),
+                                                          labels = Bin_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) }
+                  #  The End of if (Col == 'cloud_cover') 
+                 )
+  
+  # Automatically defining the scaling function for Two axes of Y - https://finchstudio.io/blog/ggplot-dual-y-axes/
+  max_first  <- max(data_long$value, na.rm = TRUE)                     # Specify max of first y axis
+  max_second <- max(data$Mean, na.rm = TRUE)                           # Specify max of second y axis
+  min_first  <- 0  # min(data_long$value, na.rm = TRUE)                # Specify min of first y axis
+  min_second <- ifelse(Col == 'daily_relative_humidity_2m_max', 20, 0) # min(data$Mean, na.rm = TRUE) # Specify min of second y axis
+  
+  # scale and shift variables calculated based on desired mins and maxes
+  scale = (max_second - min_second)/(max_first - min_first)
+  shift = min_first - min_second
+  
+  NCol <- ifelse(names(data) |> length() > 10, 2L, 1L)  # Кол-во колонок при выводе легенды
+  
+  if (Col != 'cloud_cover') Bin_colors <- setNames(Bin_colors, Bin_labels)
+
+  # Построение сводной столбиковой диаграммы с наложением
+  ggplot2::ggplot(data_long, aes(x = Month, y = value, fill = Bin)) +
+    ggplot2::geom_col(color = 'white') +
+    ggplot2::geom_line(data = dplyr::distinct(data_long, Month, Mean, .keep_all = TRUE), aes(x = Month, y = { if (Is_Scaled_Second_Y_Axes == TRUE) inv_scale_function(Mean, scale, shift) else Mean }, color = 'Mean'), group = 1, linewidth = 0.7) +
+    ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Mean, .keep_all = TRUE), aes(label = round(Mean, 1), x = Month, y = { if (Is_Scaled_Second_Y_Axes == TRUE) inv_scale_function(Mean, scale, shift) + 1.5 else Mean + 1.5 }), size = 3, color = 'cornflowerblue') +
+    
+    ggplot2::scale_fill_manual( values = Bin_colors, name = 'Daily Precipitation \nBins, %' ) +
+    ggplot2::scale_color_manual( values = c(Mean = 'cornflowerblue'), labels = c(Mean = 'Precipitation \nDays') ) +
+    ggplot2::scale_y_continuous( name = 'Days', minor_breaks  = seq(0, 31, by = 1), 
+                             sec.axis = ggplot2::sec_axis(transform = 
+                            { if (Is_Scaled_Second_Y_Axes == TRUE) ~scale_function(., scale, shift) else ~ . * 1 },
+                              name = Second_Y_Axes_name, 
+                              breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(min_second, ceiling( max_second )
+                                              , by = ifelse(Col == 'daily_relative_humidity_2m_max', 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
+
+    ggplot2::labs(title = 'Cloudiness & Precipitation Days by Months', y = 'Days') + # , fill = 'Cloudiness', color = 'Precipitation Days') +
+    ggplot2::theme_minimal() +
+    # ggplot2::coord_cartesian(ylim = c(15, NA)) +
+    ggplot2::theme( plot.title = ggplot2::element_text(hjust = 0.5),
+                    legend.position = 'right', legend.text = element_text(size = 7),
+                    legend.title = element_text(size = 8), 
+                    axis.title.x = ggplot2::element_blank(),
+                    axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5),
+                    axis.title.y = ggplot2::element_text(size = 9.5, color = 'black'),
+                    axis.text.y = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'black'),
+                    # axis.title.y.right = ggplot2::element_text(size = 9.5, color = 'coral'),
+                    # axis.text.y.right = ggplot2::element_text(size = 7, vjust = 0.5, hjust = 1, color = 'coral')
+                    ) +
+    ggplot2::guides( color = ggplot2::guide_legend(title = NULL), 
+                     fill = ggplot2::guide_legend() )
+
+}    # The End of function `Maximum_Relative_Humidity_plot()`
+
+# Пример использования функции
+
+# Диаграмма Распределения Максимальной Относительной Влажности по дням Месяцев
+Maximum_Relative_Humidity_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_relative_humidity_2m_max', Mean_Col = 'daily_relative_humidity_2m_max',
+                       Title = 'Maximum Relative Humidity Days by Months',
+                       Bin_name = 'Maximum Relative \nHumidity Bins, %',
+                       Mean_name = 'Maximum \nRelative \nHumidity, %',
+                       Bin_breaks = seq(20, 105, by = 5),
+                       Bin_labels = c("20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-99", "100") |>
+      setNames( c("[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)" , "[100,105)") ),
+                       Bin_colors = grDevices::colorRampPalette(c('white', '#eeffff', '#d5ffff', "turquoise1", 'turquoise2' ))(17),
+                       Mean_color = 'turquoise4', Second_Y_Axes_name = 'Relative Humidity, %',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+```{r}
+#| label: Distribution of Minimum Relative Humidity by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+print(Subtitle)
+
+```
+
+# Radiation & Winds
 
 ## Row - Charts {height="100%"}
 
@@ -752,10 +871,10 @@ setNames( c("[0,0.001)", "[0.001,0.25)", "[0.25,0.5)", "[0.5,1)", "[1,2)", "[2,5
 
 ```
 
-### Column - Relative Humidity {width="50%"}
+### Column - Winds {width="50%"}
 
 ```{r}
-#| label: Distribution of Relative Humidity by Day Chart
+#| label: Distribution of Winds by Day Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
 print(Subtitle)

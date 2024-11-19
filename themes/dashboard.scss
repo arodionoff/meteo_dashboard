@@ -27,3 +27,8 @@ $hover-color: lighten($link-color, 40%);
 .nav-link{
   color: #F0F0F0;
 }
+
+.font-small pre {
+  font-size: 8pt;
+  /* font-weight: 600; */
+}

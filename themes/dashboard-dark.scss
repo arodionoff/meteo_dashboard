@@ -39,3 +39,8 @@ $hover-color: lighten($link-color, 40%);
 .quarto-dashboard aside.sidebar {
   background-color: #263b49;
 }
+
+.font-small pre {
+  font-size: 8pt;
+  /* font-weight: 600; */
+}

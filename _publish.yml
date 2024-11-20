@@ -1,0 +1,4 @@
+- source: index.qmd
+  quarto-pub:
+    - id: 655a6198-216e-46f3-a059-34f7eb4d2cc5
+      url: https://arodionoff.quarto.pub/using-openmeteo-package-with-quarto-dashboard

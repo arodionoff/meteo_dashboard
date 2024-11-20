@@ -7,18 +7,22 @@ author:
 date_start: "7 November 2024"
 # orientation: columns
 params:
-  # loc_name:  'Almaty City' # 'Phuquoc Island'
+  # loc_name: 'Sossusvlei'  # The driest place on Earth
+  # loc_code: 'SOS'
+  # loc_coordinats: !expr "c('latitude' = -24.7373, 'longitude' = 15.287)"
+  # loc_name:  'Almaty City' # Place of birth
   # loc_code:  'ALA' # 'PQC'
   # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"  # "c('latitude' = 10.2872, 'longitude' = 104.0105)"
-  # loc_name: 'Phuquoc Island'  # 'Almaty City' 
-  # loc_code:  'PQC'# 'ALA'
-  # loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
-  loc_name:  'Oymyakon Vilage'
-  loc_code:  'OYM'
-  loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
-  # loc_name:  'Dubai City'
-  # loc_code:  'DXB'
-  # loc_coordinats: !expr "c('latitude' = 25.0772, 'longitude' = 55.3093)"  Start_Date:  1994-11-01
+  # loc_name: 'Lloro'  # The rainiest place on Earth
+  # loc_code: 'LLR'
+  # loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
+  loc_name: 'Phuquoc Island'  # The largest island in Vietnam
+  loc_code:  'PQC'# 'ALA'
+  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
+  # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
+  # loc_code:  'OYM'
+  # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
+  Start_Date:  1994-11-01
   Finish_Date: 2024-11-01
 ---
 
@@ -253,6 +257,8 @@ prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zst.parq
 #                               end = params$Finish_Date,
 #                               daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
 # 
+# Sys.sleep(61)  # Delay 61 seconds
+# 
 # meteo_hourly_df <- # obtain Weather history for Location over 1950
 #   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
 #                               location = params$loc_coordinats,
@@ -377,7 +383,7 @@ list(
 
 <small>
 
-Historical data can be downloaded directly using the package [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) from [**Open-Meteo API**](https://open-meteo.com/en/docs), since it has the ability to take the following **daily** variables:
+Historical data can be downloaded directly using the package [{openmeteo}](https://tpisel.r-universe.dev/openmeteo) from [**Open-Meteo API**](https://open-meteo.com/en/docs), since it has the ability to take the following **daily** variables.
 
 | Variable | Unit | Description |
 |:--------:|:----:|:------------|
@@ -501,7 +507,9 @@ Union_plot(data = meteo_tbl) # , from = as.Date(params$Start_Date), to = as.Date
 
 ```
 
-### Column - Maximum Temperatures {width="42%"}
+### Column - Temperatures {.tabset width="42%" .expandable="false"}
+
+#### Maximum Temperatures 
 
 ```{r}
 #| label: Distribution of Maximum Temperatures by Day
@@ -542,7 +550,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
         dplyr::select(-Days) 
   
   if (Mean_Col == 'daily_temperature_2m_max') y <- 
-    # Среднемесячное число дней  заморозки
+    # Среднемесячное число дней ниже нуля
     dplyr::mutate(data0, Freezing_Days = dplyr::if_else(!!rlang::sym(Mean_Col) < 0, 1, 0) ) |>
       dplyr::group_by(Month) |> 
         dplyr::summarise(Mean = mean(Freezing_Days, na.rm = TRUE )) |>
@@ -551,6 +559,16 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
         dplyr::select(-Days)
   #  The End of if (Mean_Col == 'daily_temperature_2m_max')
   
+  if (Mean_Col == 'daily_temperature_2m_min') y <- 
+    # Среднемесячное число дней выше нуля
+    dplyr::mutate(data0, Frost_free_Days = dplyr::if_else(!!rlang::sym(Mean_Col) > 0, 1, 0) ) |>
+      dplyr::group_by(Month) |> 
+        dplyr::summarise(Mean = mean(Frost_free_Days, na.rm = TRUE )) |>
+    dplyr::left_join(MonthDays_tbl, by = dplyr::join_by(Month == Month)) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
+        dplyr::select(-Days)
+  #  The End of if (Mean_Col == 'daily_temperature_2m_min')
+
   if (Mean_Col == 'daily_precipitation_sum') y <- 
     # Среднемесячное количество Дней выпадения атмосферных осадков
     dplyr::left_join( x = dplyr::group_by(data0, Month) |> dplyr::count(name = 'All_Days')
@@ -563,7 +581,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
           dplyr::transmute(Month, Mean = Precipitation_Days_Share * Days)
   #  The End of if (Mean_Col == 'daily_precipitation_sum')
   
-  if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'daily_precipitation_sum') y <- 
+  if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'daily_temperature_2m_min' & Mean_Col != 'daily_precipitation_sum') y <- 
     # Среднедневная величина Переменной (Обобщенный Случай)
     dplyr::group_by(data0, Month) |> 
       dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE))
@@ -578,7 +596,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                          names_to = 'Bin',
                          values_to = 'value' ) |>
     dplyr::mutate( Month = factor(Month, levels = month.abb)
-                 , Mean = if (Mean_Col == 'daily_temperature_2m_max') dplyr::if_else(Mean == 0, NA, Mean) else Mean
+                 , Mean = if (Mean_Col %in% c('daily_temperature_2m_max', 'daily_temperature_2m_min')) dplyr::if_else(Mean == 0, NA, Mean) else Mean
                  , Bin = if (Col == 'cloud_cover') factor(Bin, levels = names(data)[c(-1, -ncol(data))]) else { 
                                               factor(Bin, levels = rev(names(data)[c(-1, -ncol(data))]),
                                                           labels = Bin_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) }
@@ -651,6 +669,26 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
+#### Minimum Temperatures 
+
+```{r}
+#| label: Distribution of Minimum Temperatures by Day
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Диаграмма Распределения Минимальных температур по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_temperature_2m_min', Mean_Col = 'daily_temperature_2m_min',
+                       Title = 'Minimum Temperatures & Frost-free Days by Months',
+                       Bin_name = 'Temperature Bins, °C',
+                       Mean_name = 'Frost-free \nDays',
+                       Bin_breaks = c(-Inf, -70, -50, seq(-32, 40, by = 4), 46, Inf),
+                       Bin_labels = c("less -70", "-70/-50", "-50/-32", "-32/-28", "-28/-24", "-24/-20", "-20/-16", "-16/-12", "-12/-8", "-8/-4", "-4/0", "0/4", "4/8", "8/12", "12/16", "16/20", "20/24", "24/28", "28/32", "32/36", "36/40", "40/46", "more 46") |>
+      setNames( c("[-Inf,-70)", "[-70,-50)", "[-50,-32)", "[-32,-28)", "[-28,-24)", "[-24,-20)", "[-20,-16)", "[-16,-12)", "[-12,-8)", "[-8,-4)", "[-4,0)", "[0,4)", "[4,8)", "[8,12)", "[12,16)", "[16,20)", "[20,24)", "[24,28)", "[28,32)", "[32,36)", "[36,40)", "[40,46)", "[46, Inf)") ),
+                       Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#00FF84", "#00FF33", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
+                       Mean_color = 'darkorange3', Second_Y_Axes_name = 'Days')
+
+```
+
 # Precipitation & Relative Humidity
 
 ## Row - Charts {height="100%"}
@@ -705,7 +743,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Bin_name = 'Maximum Relative \nHumidity Bins, %',
                        Mean_name = 'Average Maximum \nRelative Humidity, %',
                        Bin_breaks = c(0, seq(10, 105, by = 5)),
-                       Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-99", "100") |>
+                       Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-99", "100") |>
       setNames( c("[0,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100,105)") ),
                        Bin_colors = grDevices::colorRampPalette(c("#ecf0fc", "#d9e1f9", "#c6d2f6", "#b3c3f3", "#a0b4f0", "#8da5ed", "#7a96ea", "#6687e7"))(20),
                        Mean_color = 'darkblue', Second_Y_Axes_name = 'Relative Humidity, %',
@@ -724,7 +762,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Bin_name = 'Minimum Relative \nHumidity Bins, %',
                        Mean_name = 'Average Minimum \nRelative Humidity, %',
                        Bin_breaks = c(0, seq(10, 105, by = 5)),
-                       Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-99", "100") |>
+                       Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-99", "100") |>
       setNames( c("[0,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100,105)") ),
                        Bin_colors = grDevices::colorRampPalette(c("#ecf0fc", "#d9e1f9", "#c6d2f6", "#b3c3f3", "#a0b4f0", "#8da5ed", "#7a96ea", "#6687e7"))(20),
                        Mean_color = 'darkblue', Second_Y_Axes_name = 'Relative Humidity, %',
@@ -787,10 +825,10 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Title = 'Maximum Wind Speed 10 Meters Days by Months',
                        Bin_name = 'Maximum Wind \nSpeed Bins, km/h',
                        Mean_name = 'Average Maximum \nWind Speed, km/h',
-                       Bin_breaks = seq(0, 95, by = 5),
-                       Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95") |>
-      setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)") ),
-                       Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(20),
+                       Bin_breaks = seq(0, 105, by = 5),
+                       Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
+                  setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
+                       Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(21),
                        Mean_color = 'darkolivegreen', Second_Y_Axes_name = 'Maximum Wind Speed, km/h',
                        Is_Scaled_Second_Y_Axes = TRUE)
 
@@ -808,7 +846,7 @@ Wind_Speed_Rose_plot <-   function(data, from = min(data$date, na.rm = TRUE), to
                                    Bin_breaks = seq(0, 105, by = 5),
                                    Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
                   setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
-                                   Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(21)) {
+                                   Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21)) {
   
   Directions <-  c('NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N')
   
@@ -835,10 +873,10 @@ Wind_Speed_Rose_plot <-   function(data, from = min(data$date, na.rm = TRUE), to
   ggplot2::ggplot(data_long, aes(x = Direction, y = value, fill = Bin)) +
     ggplot2::geom_col(color = 'white') +
 
-    ggplot2::scale_fill_manual( values = Bin_colors, name = Bin_name ) +
+    ggplot2::scale_fill_manual( values = setNames(Bin_colors, rev(Bin_labels)), name = Bin_name ) +
     ggplot2::scale_y_continuous( labels = NULL ) +
 
-    ggplot2::labs(title = Title, y = 'Days') + # , fill = 'Cloudiness', color = 'Precipitation Days') +
+    ggplot2::labs(title = Title, y = '') + # , fill = 'Cloudiness', color = 'Precipitation Days') +
     ggplot2::theme_minimal() +
     # ggplot2::coord_cartesian(ylim = c(15, NA)) +
     ggplot2::coord_polar(theta = 'x', start = 11.25 * (pi / 180)) +
@@ -847,7 +885,8 @@ Wind_Speed_Rose_plot <-   function(data, from = min(data$date, na.rm = TRUE), to
                     legend.title = element_text(size = 8), 
                     axis.title.x = ggplot2::element_blank(),
                     axis.text.x = ggplot2::element_text(size = 7, vjust = 0.5)
-                    )
+                    ) +
+    ggplot2::guides( fill = ggplot2::guide_legend(ncol = NCol) )
 
 }    # The End of function `Maximum_Relative_Humidity_plot()`
 
@@ -860,7 +899,7 @@ Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to
                      Bin_breaks = seq(0, 105, by = 5),
                      Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
     setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
-                     Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(21))
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21))
 
 ```
 

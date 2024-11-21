@@ -13,15 +13,15 @@ params:
   # loc_name:  'Almaty City' # Place of birth
   # loc_code:  'ALA' # 'PQC'
   # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"  # "c('latitude' = 10.2872, 'longitude' = 104.0105)"
-  loc_name: 'Lloro'  # The rainiest place on Earth
-  loc_code: 'LLR'
-  loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
+  # loc_name: 'Lloro'  # The rainiest place on Earth
+  # loc_code: 'LLR'
+  # loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
   # loc_name: 'Phuquoc Island'  # The largest island in Vietnam
   # loc_code:  'PQC'# 'ALA'
   # loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
-  # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
-  # loc_code:  'OYM'
-  # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
+  loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
+  loc_code:  'OYM'
+  loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
   Start_Date:  1994-11-01
   Finish_Date: 2024-11-01
 ---
@@ -250,21 +250,21 @@ nearest_multiple_of_5_down_function <- function(x) {
 prq_daily_filename <- paste0('data/meteo_daily_',  params$loc_code, '.zst.parquet')
 prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zst.parquet')
 
-meteo_daily_df <- # obtain Weather history for Location over 1950
-  openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
-                              location = params$loc_coordinats,
-                              start = params$Start_Dat,
-                              end = params$Finish_Date,
-                              daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
-
-Sys.sleep(61)  # Delay 61 seconds
-
-meteo_hourly_df <- # obtain Weather history for Location over 1950
-  openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
-                              location = params$loc_coordinats,
-                              start = params$Start_Dat,
-                              end = params$Finish_Date,
-                              hourly = c("temperature_2m", "relative_humidity_2m", "dew_point_2m", "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", "weather_code", "pressure_msl", "cloud_cover", "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day", "sunshine_duration", "shortwave_radiation") )
+# meteo_daily_df <- # obtain Weather history for Location over 1950
+#   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
+#                               location = params$loc_coordinats,
+#                               start = params$Start_Dat,
+#                               end = params$Finish_Date,
+#                               daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
+# 
+# Sys.sleep(61)  # Delay 61 seconds
+# 
+# meteo_hourly_df <- # obtain Weather history for Location over 1950
+#   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
+#                               location = params$loc_coordinats,
+#                               start = params$Start_Dat,
+#                               end = params$Finish_Date,
+#                               hourly = c("temperature_2m", "relative_humidity_2m", "dew_point_2m", "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", "weather_code", "pressure_msl", "cloud_cover", "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day", "sunshine_duration", "shortwave_radiation") )
 
 if (exists('meteo_daily_df') == TRUE) {
   arrow::write_parquet( meteo_daily_df, prq_daily_filename, compression = 'zstd', compression_level = 6) 
@@ -929,8 +929,8 @@ meteo_tbl |>
 leaflet::leaflet() |> 
   # leaflet::addTiles(group = "OSM (default)") |>
   # leaflet::addProviderTiles(providers$CartoDB.Positron, group = "Positron (minimal)") |>
-  # leaflet::addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery (satellite)") |>
-  leaflet::addProviderTiles(providers$Stadia.StamenTerrain, group = "World Terrain (color)") |>
+  leaflet::addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery (satellite)") |>
+  # leaflet::addProviderTiles(providers$Stadia.StamenTerrain, group = "World Terrain (color)") |>
   leaflet::addMarkers(lng = params$loc_coordinats['longitude'], lat = params$loc_coordinats['latitude'],
              popup = paste0(params$loc_name, ' (', params$loc_code, ')' )) |>
   leaflet::setView(lng = as.double(params$loc_coordinats['longitude']), 

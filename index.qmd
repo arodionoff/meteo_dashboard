@@ -11,19 +11,20 @@ params:
   # loc_code: 'SOS'
   # loc_coordinats: !expr "c('latitude' = -24.7373, 'longitude' = 15.287)"
   # loc_name:  'Almaty City' # Place of birth
-  # loc_code:  'ALA' # 'PQC'
-  # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"  # "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  # loc_code:  'ALA'
+  # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"
   # loc_name: 'Lloro'  # The rainiest place on Earth
   # loc_code: 'LLR'
   # loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
-  # loc_name: 'Phuquoc Island'  # The largest island in Vietnam
-  # loc_code:  'PQC'# 'ALA'
-  # loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"  # "c('latitude' = 43.25, 'longitude' = 76.93)"
-  loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
-  loc_code:  'OYM'
-  loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
-  Start_Date:  1994-11-01
-  Finish_Date: 2024-11-01
+  loc_name: 'Phuquoc Island'  # The largest island in Vietnam
+  loc_code:  'PQC'
+  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
+  # loc_code:  'OYM'
+  # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
+  # loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
+  # loc_code:  'SSH'
+  # loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
 ---
 
 ```{r}
@@ -243,42 +244,82 @@ nearest_multiple_of_5_down_function <- function(x) {
 
 ```
 
+
+```{r}
+#| label: Download Historical Weather Dataset
+#| title: Retrieve historical weather data from the Open-Meteo API
+#| eval: false
+#| include: false
+#| expandable: false
+
+# https://open-meteo.com/en/docs/historical-weather-api
+
+Location <- c(Name = 'Almaty', Code = 'ALA')
+# Location <- c(Name = 'Sharm El Sheikh', Code = 'SSH')
+# Location <- c(Name = 'Sossusvlei', Code = 'SOS')      # The driest place on Earth
+# Location <- c(Name = 'Phu Quoc', Code = 'PQC')        # The largest island in Vietnam
+# Location <- c(Name = 'Oymyakon', Code = 'OYM')        # The coldest inhabited place on Earth
+# Location <- c(Name = 'Lloro', Code = 'LLR')           # The rainiest place on Earth
+
+gc <- openmeteo::geocode(Location['Name'])
+m <- paste0(
+    "`geocode()` has matched \"", Location['Name'], "\" ('", Location['Code'], "') to:\n",
+    gc$name, " ", "in ", gc$admin1, ", ", gc$country,  " (", gc[['timezone']], ")\n",
+    "Population: ", gc$population, "\n",
+    "Co-ordinates: c(", gc$latitude, ", ", gc$longitude, ")\n\n"
+)
+cat( m )
+
+openmeteo::weather_history( location = c(gc$latitude, gc$longitude), # params$loc_coordinats
+                            start    = "1995-05-01",
+                            end      = "2025-04-30",
+                            hourly   = c("temperature_2m", "relative_humidity_2m", "dew_point_2m",
+                                        "apparent_temperature", "pressure_msl", "cloud_cover", "cloud_cover_low",
+                                        "cloud_cover_mid", "cloud_cover_high", "wind_speed_10m", "wind_speed_100m",
+                                        "wind_direction_10m", "wind_direction_100m", "wind_gusts_10m",
+                                        "shortwave_radiation", "direct_radiation", "direct_normal_irradiance",
+                                        "diffuse_radiation", "vapour_pressure_deficit", "et0_fao_evapotranspiration",
+                                        "precipitation", "rain", "weather_code", "snowfall", 'snow_depth'),
+                            timezone = gc[['timezone']]   #  'Asia/Almaty'
+                          ) |>
+  arrow::write_parquet( paste0('meteo_hourly_', Location['Code'], '.zstd.parquet')
+                      , compression = 'zstd', compression_level = 13 )
+
+openmeteo::weather_history( location = c(gc$latitude, gc$longitude),  # params$loc_coordinats
+                            start    = "1995-05-01",
+                            end      = "2025-04-30",
+                            daily    = c("weather_code", "temperature_2m_max", "temperature_2m_min", 
+                                         "temperature_2m_mean", "apparent_temperature_max",
+                                         "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset",
+                                         "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum",
+                                         "snowfall_sum", "precipitation_hours", "wind_speed_10m_max",
+                                         "wind_gusts_10m_max", "wind_speed_10m_mean",  "wind_direction_10m_dominant",
+                                         "shortwave_radiation_sum", "et0_fao_evapotranspiration"),
+                           timezone = gc[['timezone']]   #  'Asia/Almaty'
+                          ) |>
+  arrow::write_parquet( paste0('meteo_daily_', Location['Code'], '.zstd.parquet')
+                      , compression = 'zstd', compression_level = 13 )
+  
+```
+
 ```{r}
 #| label: Loading dataset
-#| title: Retrieve historical weather data from the Open-Meteo API
+#| title: Gathering historical weather data from Parquet file
 
 prq_daily_filename <- paste0('data/meteo_daily_',  params$loc_code, '.zst.parquet')
 prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zst.parquet')
 
-# meteo_daily_df <- # obtain Weather history for Location over 1950
-#   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
-#                               location = params$loc_coordinats,
-#                               start = params$Start_Dat,
-#                               end = params$Finish_Date,
-#                               daily = c("weather_code", "temperature_2m_max", "temperature_2m_min", "temperature_2m_mean", "apparent_temperature_max", "apparent_temperature_min", "apparent_temperature_mean", "sunrise", "sunset", "daylight_duration", "sunshine_duration", "precipitation_sum", "rain_sum", "snowfall_sum", "precipitation_hours", "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant", "shortwave_radiation_sum", "et0_fao_evapotranspiration") ) # openmeteo::weather_variables()[['daily_history_vars']] )
-# 
-# Sys.sleep(61)  # Delay 61 seconds
-# 
-# meteo_hourly_df <- # obtain Weather history for Location over 1950
-#   openmeteo::weather_history( # location = c('latitude' = 43.25, 'longitude' = 76.93),   # Almaty city
-#                               location = params$loc_coordinats,
-#                               start = params$Start_Dat,
-#                               end = params$Finish_Date,
-#                               hourly = c("temperature_2m", "relative_humidity_2m", "dew_point_2m", "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", "weather_code", "pressure_msl", "cloud_cover", "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "is_day", "sunshine_duration", "shortwave_radiation") )
+# if (exists('meteo_daily_tbl') == TRUE) {
+#   arrow::write_parquet( meteo_daily_tbl, prq_daily_filename, compression = 'zstd', compression_level = 13) 
+# } else {
+  meteo_daily_tbl = arrow::read_parquet(file = prq_daily_filename)
+# }     # The End of if (exists('meteo_daily_tbl') == TRUE)
 
-if (exists('meteo_daily_df') == TRUE) {
-  arrow::write_parquet( meteo_daily_df, prq_daily_filename, compression = 'zstd', compression_level = 6) 
-} else {
-  meteo_daily_df = arrow::read_parquet(file = prq_daily_filename)
-}     # The End of if (exists('meteo_daily_df') == TRUE)
-
-if (exists('meteo_hourly_df') == TRUE) {
-  arrow::write_parquet( meteo_hourly_df, prq_hourly_filename, compression = 'zstd', compression_level = 6)
-} else {
-  meteo_hourly_df = arrow::read_parquet(file = prq_hourly_filename)
-}     # The End of if (exists('meteo_hourly_df') == TRUE)
-
-dur <- paste0( format(as.Date(params$Start_Date), '%b %Y'), ' - ', format(as.Date(params$Finish_Date), '%b %Y') )
+# if (exists('meteo_hourly_tbl') == TRUE) {
+#   arrow::write_parquet( meteo_hourly_tbl, prq_hourly_filename, compression = 'zstd', compression_level = 13)
+# } else {
+  meteo_hourly_tbl = arrow::read_parquet(file = prq_hourly_filename)
+# }     # The End of if (exists('meteo_hourly_tbl') == TRUE)
 
 remove(prq_daily_filename, prq_hourly_filename)
 
@@ -291,9 +332,10 @@ remove(prq_daily_filename, prq_hourly_filename)
 #### I. Merge Weather Dataset with WCO Codes Dictionary
 
 meteo_tbl <- 
+  meteo_daily_tbl |>
+    dplyr::mutate( snowfall_water_equivalent_sum = daily_precipitation_sum - daily_rain_sum ) |>
   dplyr::inner_join(
-    x = meteo_daily_df,
-    y = dplyr::mutate( meteo_hourly_df # Month = factor(lubridate::month(datetime), labels = month.abb)
+    y = dplyr::mutate( meteo_hourly_tbl # Month = factor(lubridate::month(datetime), labels = month.abb)
                      , date = lubridate::as_date(datetime)
                      , cloud_cover = dplyr::if_else(hourly_cloud_cover >= 80, 3, 
                                                     dplyr::if_else(hourly_cloud_cover < 20, 1, 2)) ) |>
@@ -305,8 +347,9 @@ meteo_tbl <-
                                                   dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Partly Cloudy'))
                             , daily_relative_humidity_2m_max = max(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_relative_humidity_2m_min = min(hourly_relative_humidity_2m, na.rm = TRUE)
-                            , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) ),
-    by = dplyr::join_by( date == date )
+                            , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE)
+                            , .groups = 'drop' ),
+    by = dplyr::join_by( 'date' == 'date' )
   ) |>
     dplyr::left_join( y = WCO_Codes_tbl
                     , by = c('daily_weather_code' = 'weather_code'), relationship = 'many-to-one' ) |> 
@@ -316,7 +359,9 @@ meteo_tbl <-
         dplyr::select( -tidyselect::ends_with(' Month') ) |>
     dplyr::mutate(Month = factor(lubridate::month(date), labels = month.abb))
 
-# remove(meteo_hourly_df, meteo_daily_df, WCO_Codes_tbl, ONI_tbl)
+dur <- paste0( format(min(meteo_tbl$date), '%b %Y'), ' - ', format(max(meteo_tbl$date), '%b %Y') )
+
+# remove(meteo_hourly_tbl, meteo_daily_tbl, WCO_Codes_tbl, ONI_tbl)
 
 ```
 
@@ -326,14 +371,14 @@ meteo_tbl <-
 #| content: valuebox
 #| label: Years
 #| title: !expr "dur"
-#| subtitle: !expr "paste('Duration of observation:', format(as.Date(params$Start_Date), '%b %Y'), '---', format(as.Date(params$Finish_Date), '%b %Y'))"
+#| subtitle: !expr "paste('Duration of observation:', format(min(meteo_tbl$date), '%b %Y'), '---', format(max(meteo_tbl$date), '%b %Y'))"
 
 # Value Boxes with Icons - https://icons.getbootstrap.com/
 
 list(
   icon = 'calendar-range',
   color = '#eed5b7',
-  value = lubridate::interval(lubridate::ymd(params$Start_Date), lubridate::ymd(params$Finish_Date)) |>
+  value = lubridate::interval(lubridate::ymd(min(meteo_tbl$date)), lubridate::ymd(max(meteo_tbl$date) + 1)) |>
     lubridate::as.duration() |> as.integer('year')  |> paste('Years')
     )
 ```
@@ -352,8 +397,8 @@ list(
 
 ```{r}
 #| content: valuebox
-#| label: Average Annual Precipitation
-#| title: Average Annual Precipitation
+#| label: Mean Annual Precipitation
+#| title: Mean Annual Precipitation
 
 list(
   icon = 'cloud-rain',
@@ -388,13 +433,13 @@ Historical data can be downloaded directly using the package [{openmeteo}](https
 | Variable | Unit | Description |
 |:--------:|:----:|:------------|
 | **weather_code** | WMO code | The most severe weather condition on a given day |
-| **temperature_2m_max temperature_2m_min** | °C (°F) | Maximum and minimum daily air temperature at 2 meters above ground |
-| **apparent_temperature_max apparent_temperature_min** | °C (°F) | Maximum and minimum daily apparent temperature |
+| **temperature_2m_max temperature_2m_min** | °C (°F) | Maximum & Minimum daily air temperature at 2 meters above ground |
+| **apparent_temperature_max apparent_temperature_min** | °C (°F) | Maximum & Minimum daily apparent temperature |
 | **precipitation_sum** | mm | Sum of daily precipitation (including rain, showers and snowfall) |
 | **rain_sum** | mm | Sum of daily rain |
 | **snowfall_sum** | cm | Sum of daily snowfall |
 | **precipitation_hours** | hours | The number of hours with rain |
-| **sunrise sunset** | iso8601 | Sun rise and set times |
+| **sunrise sunset** | iso8601 | Sun rise & Sun set times |
 | **sunshine_duration** | seconds | The number of seconds of sunshine per day is determined by calculating direct normalized irradiance exceeding 120 W/m², following the WMO definition. Sunshine duration will consistently be less than daylight duration due to dawn and dusk. |
 | **daylight_duration** | seconds | Number of seconds of daylight per day |
 | **wind_speed_10m_max wind_gusts_10m_max** | km/h (mph, m/s, knots) | Maximum wind speed and gusts on a day |
@@ -439,9 +484,9 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
   legend_labels <- c(
     high_month = "Maximum of the \nhighest temperature",
     max_day = "Maximum of Mean \nDaily temperature",
-    avg_max_day = "Average of \nDaily temperature \nMaximum",
+    avg_max_day = "Mean of \nDaily temperature \nMaximum",
     median = "Median of Mean \nDaily temperature",
-    avg_min_day = "Average of \nDaily temperature \nMinimum",
+    avg_min_day = "Mean of \nDaily temperature \nMinimum",
     min_day = "Minimum of Mean \nDaily temperature",
     low_month = "Minimum of the \nlowest temperature"
     )
@@ -475,13 +520,13 @@ Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$
                              color = variable, shape = variable) ) +
     ggplot2::geom_text(data = data, aes(label = round(median, 1), x = Month, y = inv_scale_function(median, scale, shift)), size = 3, nudge_x = -0.3, nudge_y = 9, color = 'coral') +
     
-    ggplot2::scale_fill_manual( values = c(Precipitation = '#a9c4f5'), labels=c(Precipitation = 'Precipitation, mm') ) +
+    ggplot2::scale_fill_manual( values = c(Precipitation = '#a9c4f5'), labels=c(Precipitation = 'Mean Precipitation, mm') ) +
     ggplot2::scale_color_manual( values = legend_colors, labels = legend_labels ) +
     # ggplot2::scale_fill_manual( values = legend_colors, labels = legend_labels ) +
     ggplot2::scale_shape_manual( values = legend_shapes, labels = legend_labels ) +
     # ggplot2::scale_linewidth_manual( values = c(high_month = 0.5, max_day = 0.1, avg_max_day = 1, median = 2, avg_min_day = 1, min_day = 0.1, low_month = 0.5), labels = legend_labels ) +
     ggplot2::scale_linetype_manual( values = c(high_month = 'blank', max_day = 'dashed', avg_max_day = 'longdash', median = 'solid', avg_min_day = 'longdash', min_day = 'dashed', low_month = 'blank'), labels = legend_labels ) +
-    ggplot2::scale_y_continuous( name = 'Average Month Precipitation, mm', limits = c(min_first, max_first), breaks = seq(0, 2000, by = ifelse(max_first - min_first > 200, 50, 25)), sec.axis = ggplot2::sec_axis( transform = ~scale_function(., scale, shift), breaks = seq(-40, 40, by = ifelse(max_second - min_second > 30, 5, 2)), name = 'Air Temperature, °C') ) +
+    ggplot2::scale_y_continuous( name = 'Mean Month Precipitation, mm', limits = c(min_first, max_first), breaks = seq(0, 2000, by = ifelse(max_first - min_first > 200, 50, 25)), sec.axis = ggplot2::sec_axis( transform = ~scale_function(., scale, shift), breaks = seq(-40, 40, by = ifelse(max_second - min_second > 30, 5, 2)), name = 'Air Temperature, °C') ) +
     
     ggplot2::labs(title = 'Monthly Air Temperatures and Precipitation') + # , color = 'Color', fill = 'Fill', shape = 'Shape', linetype = 'Line Type') +
     ggplot2::theme_minimal() +
@@ -659,13 +704,13 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
 # Диаграмма Распределения Максимальных температур по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
                        Col = 'daily_temperature_2m_max', Mean_Col = 'daily_temperature_2m_max',
-                       Title = 'Maximum Temperatures & Freezing Days by Months',
+                       Title = 'Maximum Temperatures & Mean Freezing Days by Months',
                        Bin_name = 'Temperature Bins, °C',
-                       Mean_name = 'Freezing \nDays',
+                       Mean_name = 'Mean Freezing \nDays',
                        Bin_breaks = c(-Inf, -70, -50, seq(-32, 40, by = 4), 46, Inf),
                        Bin_labels = c("less -70", "-70/-50", "-50/-32", "-32/-28", "-28/-24", "-24/-20", "-20/-16", "-16/-12", "-12/-8", "-8/-4", "-4/0", "0/4", "4/8", "8/12", "12/16", "16/20", "20/24", "24/28", "28/32", "32/36", "36/40", "40/46", "more 46") |>
       setNames( c("[-Inf,-70)", "[-70,-50)", "[-50,-32)", "[-32,-28)", "[-28,-24)", "[-24,-20)", "[-20,-16)", "[-16,-12)", "[-12,-8)", "[-8,-4)", "[-4,0)", "[0,4)", "[4,8)", "[8,12)", "[12,16)", "[16,20)", "[20,24)", "[24,28)", "[28,32)", "[32,36)", "[36,40)", "[40,46)", "[46, Inf)") ),
-                       Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#00FF84", "#00FF33", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
+                       Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#12CD00", "#14E600", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
                        Mean_color = 'steelblue4', Second_Y_Axes_name = 'Days')
 
 ```
@@ -680,13 +725,13 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 # Диаграмма Распределения Минимальных температур по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
                        Col = 'daily_temperature_2m_min', Mean_Col = 'daily_temperature_2m_min',
-                       Title = 'Minimum Temperatures & Frost-free Days by Months',
+                       Title = 'Minimum Temperatures & Mean Frost-free Days by Months',
                        Bin_name = 'Temperature Bins, °C',
-                       Mean_name = 'Frost-free \nDays',
+                       Mean_name = 'Mean Frost-free \nDays',
                        Bin_breaks = c(-Inf, -70, -50, seq(-32, 40, by = 4), 46, Inf),
                        Bin_labels = c("less -70", "-70/-50", "-50/-32", "-32/-28", "-28/-24", "-24/-20", "-20/-16", "-16/-12", "-12/-8", "-8/-4", "-4/0", "0/4", "4/8", "8/12", "12/16", "16/20", "20/24", "24/28", "28/32", "32/36", "36/40", "40/46", "more 46") |>
       setNames( c("[-Inf,-70)", "[-70,-50)", "[-50,-32)", "[-32,-28)", "[-28,-24)", "[-24,-20)", "[-20,-16)", "[-16,-12)", "[-12,-8)", "[-8,-4)", "[-4,0)", "[0,4)", "[4,8)", "[8,12)", "[12,16)", "[16,20)", "[20,24)", "[24,28)", "[28,32)", "[32,36)", "[36,40)", "[40,46)", "[46, Inf)") ),
-                       Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#00FF84", "#00FF33", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
+                       Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#12CD00", "#14E600", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
                        Mean_color = 'darkorange3', Second_Y_Axes_name = 'Days')
 
 ```
@@ -706,7 +751,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Col = 'cloud_cover', Mean_Col = 'daily_precipitation_sum',
                        Title = 'Cloudiness & Precipitation Days by Months',
                        Bin_name = 'Cloudiness by \nMonths, Days',
-                       Mean_name = 'Precipitation \nDays',
+                       Mean_name = 'Mean Precipitation \nDays',
                        Bin_breaks = NULL,
                        Bin_labels = c(Sunny = 'Sunny', `Partly Cloudy` = 'Partly Cloudy', Overcast = 'Overcast'),
                        Bin_colors = c(Sunny = 'yellow', `Partly Cloudy` = '#D8D594', Overcast = 'lightskyblue4'),
@@ -721,9 +766,9 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 # Диаграмма Распределения Количества Осадков по дням Месяцев 
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
                        Col = 'daily_precipitation_sum', Mean_Col = 'daily_precipitation_hours',
-                       Title = 'Daily Precipitation Amount & Precipitation Hours by Months',
-                       Bin_name = 'Daily Precipitation \nBins, mm',
-                       Mean_name = 'Daily Precipitation, \nHours',
+                       Title = 'Mean Daily Precipitation Amount & Mean Precipitation Hours by Months',
+                       Bin_name = 'Mean Daily Precipitation \nBins, mm',
+                       Mean_name = 'Mean Daily Precipitation, \nHours',
                        Bin_breaks = c(-Inf, 0.1, 2, 5, 10, 20, 50, 100, Inf),
                        Bin_labels = c("Dry Days", "0-2", "2-5", "5-10", "10-20", "20-50", "50-100", "more 100") |>
     setNames( c("[-Inf,0.1)", "[0.1,2)", "[2,5)", "[5,10)", "[10,20)", "[20,50)", "[50,100)", "[100, Inf)") ),
@@ -743,7 +788,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Col = 'daily_relative_humidity_2m_max', Mean_Col = 'daily_relative_humidity_2m_max',
                        Title = 'Maximum Relative Humidity Days by Months',
                        Bin_name = 'Maximum Relative \nHumidity Bins, %',
-                       Mean_name = 'Average Maximum \nRelative Humidity, %',
+                       Mean_name = 'Mean Maximum \nRelative Humidity, %',
                        Bin_breaks = c(0, seq(10, 105, by = 5)),
                        Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-99", "100") |>
       setNames( c("[0,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100,105)") ),
@@ -762,7 +807,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Col = 'daily_relative_humidity_2m_min', Mean_Col = 'daily_relative_humidity_2m_min',
                        Title = 'Minimum Relative Humidity Days by Months',
                        Bin_name = 'Minimum Relative \nHumidity Bins, %',
-                       Mean_name = 'Average Minimum \nRelative Humidity, %',
+                       Mean_name = 'Mean Minimum \nRelative Humidity, %',
                        Bin_breaks = c(0, seq(10, 105, by = 5)),
                        Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-99", "100") |>
       setNames( c("[0,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100,105)") ),
@@ -826,7 +871,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Col = 'daily_wind_speed_10m_max', Mean_Col = 'daily_wind_speed_10m_max',
                        Title = 'Maximum Wind Speed 10 Meters Days by Months',
                        Bin_name = 'Maximum Wind \nSpeed Bins, km/h',
-                       Mean_name = 'Average Maximum \nWind Speed, km/h',
+                       Mean_name = 'Mean Maximum \nWind Speed, km/h',
                        Bin_breaks = seq(0, 105, by = 5),
                        Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
                   setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
@@ -927,9 +972,10 @@ meteo_tbl |>
 #| label: Interaction Map
 
 leaflet::leaflet() |> 
-  # leaflet::addTiles(group = "OSM (default)") |>
+  leaflet::addTiles(group = "OSM (default)") |>
   # leaflet::addProviderTiles(providers$CartoDB.Positron, group = "Positron (minimal)") |>
-  leaflet::addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery (satellite)") |>
+  # leaflet::addProviderTiles(providers$OpenTopoMap, group = "OpenTopoMap") |>
+  # leaflet::addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery (satellite)") |>
   # leaflet::addProviderTiles(providers$Stadia.StamenTerrain, group = "World Terrain (color)") |>
   leaflet::addMarkers(lng = params$loc_coordinats['longitude'], lat = params$loc_coordinats['latitude'],
              popup = paste0(params$loc_name, ' (', params$loc_code, ')' )) |>

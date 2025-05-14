@@ -9,9 +9,9 @@ params:
   # loc_name: 'Sossusvlei'  # The driest place on Earth
   # loc_code: 'SOS'
   # loc_coordinats: !expr "c('latitude' = -24.7373, 'longitude' = 15.287)"
-  # loc_name:  'Almaty City' # Place of birth
-  # loc_code:  'ALA'
-  # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"
+  loc_name:  'Almaty City' # Place of birth
+  loc_code:  'ALA'
+  loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"
   # loc_name: 'Lloro'  # The rainiest place on Earth
   # loc_code: 'LLR'
   # loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
@@ -24,9 +24,9 @@ params:
   # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
   # loc_code:  'OYM'
   # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
-  loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
-  loc_code:  'SSH'
-  loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
+  # loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
+  # loc_code:  'SSH'
+  # loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
   # loc_name: 'Aomori'            # The world's snowiest city
   # loc_code: 'AOJ'
   # loc_coordinats: !expr "c('latitude' = 40.81667, 'longitude' = 140.7333)"

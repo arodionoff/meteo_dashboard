@@ -1,5 +1,4 @@
 ---
-title: "Using {openmeteo} package with Quarto dashboard"
 author: 
   name: Alexander Rodionov
   email: a.rodionoff@gmail.com
@@ -16,15 +15,25 @@ params:
   # loc_name: 'Lloro'  # The rainiest place on Earth
   # loc_code: 'LLR'
   # loc_coordinats: !expr "c('latitude' = 5.4961, 'longitude' = -76.5494)"
-  loc_name: 'Phuquoc Island'  # The largest island in Vietnam
-  loc_code:  'PQC'
-  loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  # loc_name: 'Phuquoc Island'  # The largest island in Vietnam
+  # loc_code:  'PQC'
+  # loc_coordinats: !expr "c('latitude' = 10.2872, 'longitude' = 104.0105)"
+  # loc_name: 'Dubai'  # The world's busiest airport by international passenger traffic
+  # loc_code:  'DXB'
+  # loc_coordinats: !expr "c('latitude' = 25.07725, 'longitude' = 55.30927)"
   # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
   # loc_code:  'OYM'
   # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
-  # loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
-  # loc_code:  'SSH'
-  # loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
+  loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
+  loc_code:  'SSH'
+  loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
+  # loc_name: 'Aomori'            # The world's snowiest city
+  # loc_code: 'AOJ'
+  # loc_coordinats: !expr "c('latitude' = 40.81667, 'longitude' = 140.7333)"
+  # loc_name: 'Fairbanks'           # The second largest city in the Alaska state
+  # loc_code: 'FAI'
+  # loc_coordinats: !expr "c('latitude' = 64.83778, 'longitude' = -147.7164)"
+subtitle: "using {openmeteo} package with Quarto dashboard by"
 ---
 
 ```{r}
@@ -58,13 +67,13 @@ library('leaflet')          # Create Interactive Web Maps with the JavaScript 'L
 # devtools::install_github('tpisel/openmeteo')
 library('openmeteo')        # Retrieve Weather Data from the Open-Meteo API
 
-Subtitle <- 
+Title <- 
   paste0(params$loc_name, " (", round(params$loc_coordinats['latitude'], digi = 2), ifelse(params$loc_coordinats['latitude'] > 0, "°N Lat, ",  "°S Lat, "), round(params$loc_coordinats['longitude'], digi = 2), ifelse(params$loc_coordinats['longitude'] > 0, "°E Lng)", "°W Lng)"))
 
 ```
 
 ---
-subtitle: "for **`r Subtitle`** by"
+title: "**`r Title`**"
 ---
 
 ```{r}
@@ -254,13 +263,16 @@ nearest_multiple_of_5_down_function <- function(x) {
 
 # https://open-meteo.com/en/docs/historical-weather-api
 
-Location <- c(Name = 'Almaty', Code = 'ALA')
+# Location <- c(Name = 'Almaty', Code = 'ALA')
 # Location <- c(Name = 'Sharm El Sheikh', Code = 'SSH')
 # Location <- c(Name = 'Sossusvlei', Code = 'SOS')      # The driest place on Earth
 # Location <- c(Name = 'Phu Quoc', Code = 'PQC')        # The largest island in Vietnam
 # Location <- c(Name = 'Oymyakon', Code = 'OYM')        # The coldest inhabited place on Earth
 # Location <- c(Name = 'Lloro', Code = 'LLR')           # The rainiest place on Earth
-
+# Location <- c(Name = 'Dubai', Code = 'DXB')           # The world's busiest airport by international passenger traffic
+# Location <- c(Name = 'Aomori', Code = 'AOJ')          # The world's snowiest city
+Location <- c(Name = 'Fairbanks', Code = 'FAI')         # The second largest city in the Alaska state
+ 
 gc <- openmeteo::geocode(Location['Name'])
 m <- paste0(
     "`geocode()` has matched \"", Location['Name'], "\" ('", Location['Code'], "') to:\n",
@@ -306,8 +318,8 @@ openmeteo::weather_history( location = c(gc$latitude, gc$longitude),  # params$l
 #| label: Loading dataset
 #| title: Gathering historical weather data from Parquet file
 
-prq_daily_filename <- paste0('data/meteo_daily_',  params$loc_code, '.zst.parquet')
-prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zst.parquet')
+prq_daily_filename <- paste0('data/meteo_daily_',  params$loc_code, '.zstd.parquet')
+prq_hourly_filename <- paste0('data/meteo_hourly_',  params$loc_code, '.zstd.parquet')
 
 # if (exists('meteo_daily_tbl') == TRUE) {
 #   arrow::write_parquet( meteo_daily_tbl, prq_daily_filename, compression = 'zstd', compression_level = 13) 
@@ -345,9 +357,10 @@ meteo_tbl <-
           #   dplyr::rename_with(~ gsub('^hourly_', 'daily_', .), dplyr::starts_with('hourly_'))
             dplyr::summarise( cloud_cover = dplyr::if_else( mean(cloud_cover) <= 1.3, 'Sunny',
                                                   dplyr::if_else( mean(cloud_cover) == 3, 'Overcast', 'Partly Cloudy'))
+                            , daily_relative_humidity_2m_mean = mean(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_relative_humidity_2m_max = max(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_relative_humidity_2m_min = min(hourly_relative_humidity_2m, na.rm = TRUE)
-                            , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE)
+                            , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) * 100
                             , .groups = 'drop' ),
     by = dplyr::join_by( 'date' == 'date' )
   ) |>
@@ -360,6 +373,8 @@ meteo_tbl <-
     dplyr::mutate(Month = factor(lubridate::month(date), labels = month.abb))
 
 dur <- paste0( format(min(meteo_tbl$date), '%b %Y'), ' - ', format(max(meteo_tbl$date), '%b %Y') )
+
+IsSnowCover <- max(meteo_tbl$daily_snow_depth_max) >= 0.03
 
 # remove(meteo_hourly_tbl, meteo_daily_tbl, WCO_Codes_tbl, ONI_tbl)
 
@@ -575,7 +590,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                                    Is_Scaled_Second_Y_Axes = FALSE) {
   data <- 
     data |>
-    dplyr::filter(date >= from & date <= to)
+      dplyr::filter(date >= from & date <= to)
   
   data0 <- data
   
@@ -633,8 +648,14 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
       dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE))
   #  The End of if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'cloud_cover')
   
+  if (Col == 'daily_snow_depth_max') {
+    # Если есть, перемещаем ее в конец
+    data <- data |>
+      dplyr::select(-tidyselect::one_of("[-Inf,0.5)"))
+  }   # The End of if (Col == 'daily_snow_depth_max')
+  
   data <- 
-    dplyr::inner_join( x = data, y = y, by = dplyr::join_by(Month == Month) )
+    dplyr::inner_join( x = data, y = y, by = dplyr::join_by('Month' == 'Month') )
   
   data_long <- 
     tidyr::pivot_longer( data,
@@ -642,7 +663,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                          names_to = 'Bin',
                          values_to = 'value' ) |>
     dplyr::mutate( Month = factor(Month, levels = month.abb)
-                 , Mean = if (Mean_Col %in% c('daily_temperature_2m_max', 'daily_temperature_2m_min')) dplyr::if_else(Mean == 0, NA, Mean) else Mean
+                 , Mean = if (Mean_Col %in% c('daily_temperature_2m_max', 'daily_temperature_2m_min', 'daily_snow_depth_max')) dplyr::if_else(Mean < 0.03, NA, Mean) else Mean
                  , Bin = if (Col == 'cloud_cover') factor(Bin, levels = names(data)[c(-1, -ncol(data))]) else { 
                                               factor(Bin, levels = rev(names(data)[c(-1, -ncol(data))]),
                                                           labels = Bin_labels[ rev(names(data)[c(-1, -ncol(data))]) ]) }
@@ -650,10 +671,10 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                  )
   
   # Automatically defining the scaling function for Two axes of Y - https://finchstudio.io/blog/ggplot-dual-y-axes/
-  max_first  <- ifelse(Col %in% c('daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 31, max(data_long$value, na.rm = TRUE)) # Specify max of first y axis
+  max_first  <- ifelse(Col %in% c('daily_snow_depth_max', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 31, max(data_long$value, na.rm = TRUE)) # Specify max of first y axis
   max_second <- max(data$Mean, na.rm = TRUE)                           # Specify max of second y axis
   min_first  <- 0  # min(data_long$value, na.rm = TRUE)                # Specify min of first y axis
-  min_second <- ifelse(Col %in% c('daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'),  nearest_multiple_of_5_down_function(min(data$Mean, na.rm = TRUE)), 0) # Specify min of second y axis
+  min_second <- ifelse(Col %in% c('daily_snow_depth_max', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'),  nearest_multiple_of_5_down_function(min(data$Mean, na.rm = TRUE)), 0) # Specify min of second y axis
   
   # scale and shift variables calculated based on desired mins and maxes
   scale = (max_second - min_second)/(max_first - min_first)
@@ -677,8 +698,8 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                                  sec.axis = ggplot2::sec_axis(transform = 
                                 { if (Is_Scaled_Second_Y_Axes == TRUE) ~scale_function(., scale, shift) else ~ . * 1 },
                                   name = Second_Y_Axes_name, 
-                                  breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(0, ceiling( max(data$Mean) )
-                                                  , by = ifelse(Col %in% c('daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
+                                  breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(0, ceiling( max(data$Mean, na.rm = TRUE) )
+                                                  , by = ifelse(Col %in% c('daily_snow_depth_max', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
     
     ggplot2::labs(title = Title) + # , fill = 'Bin', color = 'Mean') +
     ggplot2::theme_minimal() +
@@ -777,11 +798,63 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
-### Column - Relative Humidity {width="50%"}
+### Column - Depth of Snow & Humidity  {width="50%"}
+
+`r if (IsSnowCover == TRUE) "::: {.content-visible}"`
+
+#### Row - Depth of Snow
+
+```{r}
+#| label: Distribution of Depth of Snow by Day Chart 
+#| eval: !expr "IsSnowCover == TRUE"
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+#| expandable: false
+
+# Диаграмма Распределения Количества Осадков по дням Месяцев 
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_snow_depth_max', Mean_Col = 'daily_snow_depth_max',
+                       Title = 'Maximum Daily Snow Depth & Mean Maximum Show Depth by Months',
+                       Bin_name = 'Maximum Daily Snow Depth \nBins, cm',
+                       Mean_name = 'Mean Maximum Daily Snow Depth, \ncm',
+                       Bin_breaks = c(-Inf, 0.5, 1, 5, 10, 20, 40, 60, 80, 100, Inf),
+                       Bin_labels = c("None", "0-1", "1-5", "5-10", "10-20", "20-40", "40-60", "60-80", "80-100", "more 100") |>
+    setNames( c("[-Inf,0.5)", "[0.5,1)", "[1,5)", "[5,10)", "[10,20)", "[20,40)", "[40,60)", "[60,80)", "[80,100)", "[100, Inf)") ),
+                       Bin_colors = grDevices::colorRampPalette(c("white", "cyan", "#007FFF", "blue", "#00007F"))(10),
+                       Mean_color = 'gold3', Second_Y_Axes_name = 'Cm', Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+`r if (IsSnowCover == TRUE) ":::"`
+
+`r if (IsSnowCover == TRUE) '#### Row - Relative Humidity  {.tabset heigth="54%"}' else '#### Row - Relative Humidity  {.tabset}'`
+
+##### Mean Relative Humidity
+
+```{r}
+#| label: Distribution of Mean Relative Humidity by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+#| expandable: false
+
+# Диаграмма Распределения Средней Относительной Влажности по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_relative_humidity_2m_mean', Mean_Col = 'daily_relative_humidity_2m_mean',
+                       Title = 'Mean Relative Humidity Days by Months',
+                       Bin_name = 'Mean Relative \nHumidity Bins, %',
+                       Mean_name = 'Mean Month \nRelative Humidity, %',
+                       Bin_breaks = c(0, seq(10, 105, by = 5)),
+                       Bin_labels = c("less 10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-99", "100") |>
+      setNames( c("[0,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100,105)") ),
+                       Bin_colors = grDevices::colorRampPalette(c("#ecf0fc", "#d9e1f9", "#c6d2f6", "#b3c3f3", "#a0b4f0", "#8da5ed", "#7a96ea", "#6687e7"))(20),
+                       Mean_color = 'darkblue', Second_Y_Axes_name = 'Relative Humidity, %',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+##### Maximum Relative Humidity
 
 ```{r}
 #| label: Distribution of Maximum Relative Humidity by Day Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+#| expandable: false
 
 # Диаграмма Распределения Максимальной Относительной Влажности по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
@@ -798,9 +871,12 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
+##### Minimum Relative Humidity
+
 ```{r}
 #| label: Distribution of Minimum Relative Humidity by Day Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+#| expandable: false
 
 # Диаграмма Распределения Минимальной Относительной Влажности по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
@@ -966,7 +1042,7 @@ meteo_tbl |>
 :::
 
 :::: {.card title="Let's consider the location of a geographic object" width="30%"}
-`{r} Subtitle` fits here:
+`{r} Title` fits here:
 
 ```{r}
 #| label: Interaction Map

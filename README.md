@@ -15,4 +15,4 @@ Quarto: 1.6.32
 
 # Publish into Quarto.Pub
 
-quarto publish quarto-pub index.qmd --token qpa_cETgM2FCFd3oUIFHiuXM7FmM8g30u8ZqzoQInMv5Y1HLS9YEFI0rGlp9KohPkpl7
+quarto publish quarto-pub index.qmd --token ~~qpa_cETgM2FCFd3oUIFHiuXM7FmM8g30u8ZqzoQInMv5Y1HLS9YEFI0rGlp9KohPkpl7~~

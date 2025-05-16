@@ -49,3 +49,5 @@ rsconnect/
 
 # Quarto files
 .quarto/
+
+/.quarto/

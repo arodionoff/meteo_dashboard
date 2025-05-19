@@ -6,18 +6,18 @@ author:
 date_start: "7 November 2024"
 # orientation: columns
 params:
-  # loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
-  # loc_code:  'SSH'
-  # loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
+  loc_name:  'Sharm El Sheikh'  # The biggest Egypt International airport in in the Sinai Peninsula
+  loc_code:  'SSH'
+  loc_coordinats: !expr "c('latitude' = 27.91582, 'longitude' = 34.32995)"
   # loc_name: 'Sossusvlei'  # The driest place on Earth
   # loc_code: 'SOS'
   # loc_coordinats: !expr "c('latitude' = -24.7373, 'longitude' = 15.287)"
   # loc_name: 'Dubai'  # The world's busiest airport by international passenger traffic
   # loc_code:  'DXB'
   # loc_coordinats: !expr "c('latitude' = 25.07725, 'longitude' = 55.30927)"
-  loc_name:  'Almaty City' # Place of birth
-  loc_code:  'ALA'
-  loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"
+  # loc_name:  'Almaty City' # Place of birth
+  # loc_code:  'ALA'
+  # loc_coordinats: !expr "c('latitude' = 43.25, 'longitude' = 76.93)"
   # loc_name:  'Oymyakon Vilage'  # The coldest inhabited place on Earth
   # loc_code:  'OYM'
   # loc_coordinats: !expr "c('latitude' = 63.4622, 'longitude' = 142.7949)"
@@ -361,9 +361,19 @@ meteo_tbl <-
                             , daily_relative_humidity_2m_max = max(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_relative_humidity_2m_min = min(hourly_relative_humidity_2m, na.rm = TRUE)
                             , daily_snow_depth_max = max(hourly_snow_depth, na.rm = TRUE) * 100
+                            , daily_direct_radiation_sum = sum(hourly_direct_radiation) * 0.0036   # W/m² => MJ/m²
+                            , daily_diffuse_radiation_sum = sum(hourly_diffuse_radiation) * 0.0036 # W/m² => MJ/m²
                             , .groups = 'drop' ),
     by = dplyr::join_by( 'date' == 'date' )
   ) |>
+
+    dplyr::left_join( y = dplyr::mutate( meteo_hourly_tbl, date = lubridate::as_date(datetime) ) |>
+                            dplyr::filter(hourly_precipitation > 0) |>
+                              dplyr::group_by(date) |>
+                                dplyr::summarise(daily_wind_precipitation_direction_10m_dominant =
+                                                   mean(hourly_wind_direction_10m), .groups = 'drop')
+                    , by = dplyr::join_by( 'date' == 'date' ) ) |>
+
     dplyr::left_join( y = WCO_Codes_tbl
                     , by = c('daily_weather_code' = 'weather_code'), relationship = 'many-to-one' ) |> 
       dplyr::left_join( y = ONI_tbl, 
@@ -464,11 +474,14 @@ Historical data can be downloaded directly using the package [{openmeteo}](https
 
 </small>
 
-### Column - Overview Conditions {width="42%"}
+### Column - lightsalmon {.tabset width="42%"}
+
+#### Overview Air Temperature & Precipitation
 
 ```{r}
 #| label: Overview Air Temperature & Precipitation Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.65)"
+#| expandable: false
 
 # Функция для создания графика по среднемесячным температурам воздуха и выпадению осадкам
 Union_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE)) {
@@ -566,14 +579,16 @@ Union_plot(data = meteo_tbl)
 
 ```
 
-### Column - Temperatures {.tabset width="42%"}
 
-#### Maximum Temperatures 
+#### Daylight & Sunshine Duration
 
 ```{r}
-#| label: Distribution of Maximum Temperatures by Day
+#| label: Distribution of Daylight Duration & Sunshine Duration's Share by Month
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.6)"
 #| expandable: false
+
+Time_Boundaries <- c( seq(0, 6 * 3600, by = 3600 * 2), seq(7 * 3600, 17 * 3600, by = 3600)
+                    , seq(18 * 3600, 26 * 3600, by = 3600 * 2) )
 
 # Функция создания графика Распределение Переменной по дням Месяцев
 MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
@@ -608,6 +623,13 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
     dplyr::left_join(MonthDays_tbl, by = dplyr::join_by('Month' == 'Month')) |>
       dplyr::mutate(dplyr::across(dplyr::where(is.numeric), ~ . * Days)) |>
         dplyr::select(-Days) 
+  
+  if (Mean_Col == 'daily_sunshine_duration') y <- 
+    # Доля Солнечного сияния к Продолдительности Дневного времени
+    dplyr::mutate(data0, sunshine_duration_share = daily_sunshine_duration / daily_daylight_duration * 100 ) |>
+      dplyr::group_by(Month) |> 
+        dplyr::summarise(Mean = mean(sunshine_duration_share, na.rm = TRUE), .groups = 'drop')
+  #  The End of if (Mean_Col == 'daily_sunshine_duration')
   
   if (Mean_Col == 'daily_temperature_2m_max') y <- 
     # Среднемесячное число дней ниже нуля
@@ -648,7 +670,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
           dplyr::transmute(Month, Mean = Precipitation_Days_Share * Days)
   #  The End of if (Mean_Col == 'daily_precipitation_sum')
   
-  if (Mean_Col != 'daily_temperature_2m_max' & Mean_Col != 'daily_temperature_2m_min' & Mean_Col != 'daily_precipitation_sum') y <- 
+  if ( !Mean_Col %in% c('daily_sunshine_duration', 'daily_temperature_2m_max', 'daily_temperature_2m_min', 'daily_precipitation_sum') ) y <- 
     # Среднедневная величина Переменной (Обобщенный Случай)
     dplyr::group_by(data0, Month) |> 
       dplyr::summarise(Mean = mean(!!rlang::sym(Mean_Col), na.rm = TRUE), .groups = 'drop')
@@ -685,7 +707,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
   max_first  <- ifelse(Col %in% c('daily_temperature_2m_mean', 'daily_snowfall_sum', 'daily_snow_depth_max',  'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 31, max(data_long$value, na.rm = TRUE)) # Specify max of first y axis
   max_second <- max(data$Mean, na.rm = TRUE)                           # Specify max of second y axis
   min_first  <- 0  # min(data_long$value, na.rm = TRUE)                # Specify min of first y axis
-  min_second <- ifelse(Col %in% c('daily_temperature_2m_mean', 'daily_snow_depth_max', 'daily_snowfall_sum', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'),  nearest_multiple_of_5_down_function(min(data$Mean, na.rm = TRUE)), 0) # Specify min of second y axis
+  min_second <- ifelse(Col %in% c('daily_temperature_2m_mean', 'daily_snow_depth_max', 'daily_snowfall_sum', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max', 'daily_wind_gusts_10m_max'),  nearest_multiple_of_5_down_function(min(data$Mean, na.rm = TRUE)), 0) # Specify min of second y axis
   
   # scale and shift variables calculated based on desired mins and maxes
   scale = (max_second - min_second)/(max_first - min_first)
@@ -700,7 +722,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
     ggplot2::geom_col(color = 'white') +
     ggplot2::geom_line(data = dplyr::distinct(data_long, Month, Mean, .keep_all = TRUE), aes(x = Month, y = { if (Is_Scaled_Second_Y_Axes == TRUE) inv_scale_function(Mean, scale, shift) else Mean }, color = 'Mean'), group = 1, linewidth = 0.7) +
     ggplot2::geom_text(data = dplyr::distinct(data_long, Month, Mean, .keep_all = TRUE), 
-                       aes(label = round(Mean, 1), x = Month, y = { if (Is_Scaled_Second_Y_Axes == TRUE) inv_scale_function(Mean, scale, shift) + 1.5 else Mean + 1.5 }), 
+                       aes(label = round(Mean, ifelse(Col %in% c('daily_et0_fao_evapotranspiration'), 2, 1)), x = Month, y = { if (Is_Scaled_Second_Y_Axes == TRUE) inv_scale_function(Mean, scale, shift) + 1.5 else Mean + 1.5 }), 
                        size = 3, color = Mean_color) +
     
     ggplot2::scale_fill_manual( values = Bin_colors, labels = Bin_labels, name = Bin_name ) +
@@ -710,7 +732,7 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
                                 { if (Is_Scaled_Second_Y_Axes == TRUE) ~ scale_function(., scale, shift) else ~ . * 1 },
                                   name = Second_Y_Axes_name, 
                                   breaks = { if (Is_Scaled_Second_Y_Axes == TRUE) seq(min_second, ceiling( max_second )
-                                                  , by = ifelse(Col %in% c('daily_temperature_2m_mean', 'daily_snow_depth_max', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_wind_speed_10m_max'), 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
+                                                  , by = ifelse(Col %in% c('daily_daylight_duration', 'daily_temperature_2m_mean', 'daily_snow_depth_max', 'daily_relative_humidity_2m_mean', 'daily_relative_humidity_2m_max', 'daily_relative_humidity_2m_min', 'daily_direct_radiation_sum', 'daily_diffuse_radiation_sum', 'daily_wind_speed_10m_max', 'daily_wind_speed_10m_mean', 'daily_wind_gusts_10m_max'), 5, 0.5) ) else seq(0, 24, by = 2) }) ) +
     
     ggplot2::labs(title = Title) + # , fill = 'Bin', color = 'Mean') +
     ggplot2::theme_minimal() +
@@ -732,6 +754,29 @@ MonthDistribution_plot <- function(data, from = min(data$date, na.rm = TRUE), to
   
 }    # The End of function `MonthDistribution_plot()`
 
+
+# Диаграмма Распределения Продолжительности Дневного времени И Долей Солнечного сияния в них по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_daylight_duration', Mean_Col = 'daily_sunshine_duration',
+                       Title = 'Daylight Duration & Sunshine Duration`s Share by Months',
+                       Bin_name = 'Daylight Duration \nBins, Hours',
+                       Mean_name = 'Sunshine Duration`s \nShare in \nDaylight Duration, %',
+                       Bin_breaks = Time_Boundaries,
+                       Bin_labels = c("less 2", "2-4", "4-6", "6-7", "7-8", "8-9", "9-10", "10-11", "11-12", "12-13", "13-14", "14-15", "15-16", "16-17", "17-18", "18-20", "20-22", "22-24") |>
+    setNames( gsub("0e\\+0", "e+0", sprintf("[%.2e,%.2e)", Time_Boundaries[-20], Time_Boundaries[-1]) |> _[-19]) ),
+                       Bin_colors = grDevices::colorRampPalette(c("blue", "steelblue2", "khaki", "gold", "lightsalmon", "lightsalmon3"))(18), # "cornsilk",
+                       Mean_color = 'red', Second_Y_Axes_name = '%', Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+### Column - Temperatures {.tabset width="42%"}
+
+#### Maximum Temperatures 
+
+```{r}
+#| label: Distribution of Maximum Temperatures by Day
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.6)"
+#| expandable: false
 
 # Диаграмма Распределения Максимальных температур по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
@@ -764,7 +809,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
                        Bin_labels = c("less -70", "-70/-50", "-50/-32", "-32/-28", "-28/-24", "-24/-20", "-20/-16", "-16/-12", "-12/-8", "-8/-4", "-4/0", "0/4", "4/8", "8/12", "12/16", "16/20", "20/24", "24/28", "28/32", "32/36", "36/40", "40/46", "more 46") |>
       setNames( c("[-Inf,-70)", "[-70,-50)", "[-50,-32)", "[-32,-28)", "[-28,-24)", "[-24,-20)", "[-20,-16)", "[-16,-12)", "[-12,-8)", "[-8,-4)", "[-4,0)", "[0,4)", "[4,8)", "[8,12)", "[12,16)", "[16,20)", "[20,24)", "[24,28)", "[28,32)", "[32,36)", "[36,40)", "[40,46)", "[46, Inf)") ),
                        Bin_colors = c("#9400D3", "#6400B8", "#35009D", "#050083", "#13248E", "#294D9F", "#4077AF", "#3594BA", "#1EABC2", "#08C3CA", "#00F7F7", "#12CD00", "#14E600", "#1EFA00", "#70ED00", "#C1E000", "#FFCF06", "#FFB31F", "#FF9739", "#FA7A50", "#D55450", "#B02F50", "#8B0A50"),
-                       Mean_color = 'coral3', Second_Y_Axes_name = '°C', Is_Scaled_Second_Y_Axes = TRUE)
+                       Mean_color = 'darkred', Second_Y_Axes_name = '°C', Is_Scaled_Second_Y_Axes = TRUE)
 
 ```
 
@@ -1077,7 +1122,7 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 
 ```
 
-# Radiation & Winds
+# Solar Radiation
 
 ## Row - Charts {height="100%"}
 
@@ -1090,14 +1135,14 @@ MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), 
 # Диаграмма Распределения Коротковолновой Солнечной Радиации по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
                        Col = 'daily_shortwave_radiation_sum', Mean_Col = 'daily_shortwave_radiation_sum',
-                       Title = 'Shortwave Radiation Amount & Mean by Months',
-                       Bin_name = 'Shortwave \nRadiation\nBins, W/m²',
-                       Mean_name = 'Shortwave \nRadiation\nMean, W/m²',
+                       Title = 'Daily Shortwave Radiation Amount & Mean by Months',
+                       Bin_name = 'Shortwave \nRadiation\nBins, MJ/m²',
+                       Mean_name = 'Shortwave \nRadiation\nMean, MJ/m²',
                        Bin_breaks = c(-Inf, 1, 2, 5, 10, 15, 20, 25, Inf),
                        Bin_labels = c("0-1", "1-2", "2-5", "5-10", "10-15", "15-20", "20-25", "more 25") |>
     setNames( c("[-Inf,1)", "[1,2)", "[2,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25, Inf)") ),
                         Bin_colors = grDevices::colorRampPalette(c('#fff1e1', "bisque", "#ff9d57", "chocolate1", "chocolate3" ))(8),
-                        Mean_color = 'brown', Second_Y_Axes_name = 'W/m²')
+                        Mean_color = 'brown', Second_Y_Axes_name = 'MJ/m²')
 
 ```
 
@@ -1120,50 +1165,128 @@ setNames( c("[0,0.001)", "[0.001,0.25)", "[0.25,0.5)", "[0.5,1)", "[1,2)", "[2,5
 
 ```
 
-### Column - Winds {width="50%"}
+### Column - Structure of Shortwave Radiation (Direct Radiation + Diffuse Radiation) {width="50%"}
 
 ```{r}
-#| label: Distribution of Speed Winds by Day Chart
+#| label: Distribution of Direct Radiation by Day Chart
 #| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
 
-# Диаграмма Распределения Скорости ветра на уровни 10 м по дням Месяцев
+# Диаграмма Распределения Прямой солнечной радиации, которая достигает поверхности Земли НАПРЯМУЮ по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_direct_radiation_sum', Mean_Col = 'daily_direct_radiation_sum',
+                       Title = 'Daily Direct Radiation (Shortwave Radiation`s component) by Months',
+                       Bin_name = 'Daily Direct \nRadiation Bins, MJ/m²',
+                       Mean_name = 'Daily Direct \nRadiation, MJ/m²',
+                       Bin_breaks = c(seq(0, 30, by = 5), Inf),
+                       Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "more 30") |>
+                  setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,Inf)") ),
+                       Bin_colors = grDevices::colorRampPalette(c('lightpink', 'darksalmon', 'coral', 'coral3'))(7),
+                       Mean_color = 'coral4', Second_Y_Axes_name = 'Direct Radiation, MJ/m²',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+```{r}
+#| label: Distribution of Diffuse Radiation by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Диаграмма Распределения Рассеянной солнечной радиации, которая рассеивается в атмосфере и достигает поверхности Земли со всех направлений по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_diffuse_radiation_sum', Mean_Col = 'daily_diffuse_radiation_sum',
+                       Title = 'Daily Diffuse Radiation (Shortwave Radiation`s component) by Months',
+                       Bin_name = 'Daily Diffuse \nRadiation Bins, MJ/m²',
+                       Mean_name = 'Daily Diffuse \nRadiation, MJ/m²',
+                       Bin_breaks = c(seq(0, 8, by = 1), Inf),
+                       Bin_labels = c("0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "more 8") |>
+                  setNames( c("[0,1)", "[1,2)", "[2,3)", "[3,4)", "[4,5)", "[5,6)", "[6,7)", "[7,8)", "[8,Inf)") ),
+                       Bin_colors = grDevices::colorRampPalette(c('beige', 'bisque', 'burlywood1', 'burlywood3'))(9),
+                       Mean_color = 'burlywood4', Second_Y_Axes_name = 'Diffuse Radiation, MJ/m²',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+# Wind Speed & Roses
+
+## Row - Charts {height="100%"}
+
+### Column - Wind Speed {width="50%"}
+
+#### Wind Speed Chart {.tabset height="46%"}
+
+##### Maximum Wind Speed
+
+```{r}
+#| label: Distribution of Maximum Speed Winds by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+Wind_Bin_labels <-  c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-100", "100-105") |>
+    setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") )
+
+# Диаграмма Распределения Максимальной Скорости ветра на уровни 10 м по дням Месяцев
 MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
                        Col = 'daily_wind_speed_10m_max', Mean_Col = 'daily_wind_speed_10m_max',
                        Title = 'Maximum Wind Speed 10 Meters Days by Months',
                        Bin_name = 'Maximum Wind \nSpeed Bins, km/h',
                        Mean_name = 'Mean Maximum \nWind Speed, km/h',
                        Bin_breaks = seq(0, 105, by = 5),
-                       Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
-                  setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
+                       Bin_labels = Wind_Bin_labels,
                        Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(21),
                        Mean_color = 'darkolivegreen', Second_Y_Axes_name = 'Maximum Wind Speed, km/h',
                        Is_Scaled_Second_Y_Axes = TRUE)
 
 ```
 
+##### Mean Wind Speed
+
 ```{r}
-#| label: Distribution of Wind Speed Rose by Day Chart
-#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+#| label: Distribution of Mean Speed Winds by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+# Диаграмма Распределения Средней Скорости ветра на уровни 10 м по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_wind_speed_10m_mean', Mean_Col = 'daily_wind_speed_10m_mean',
+                       Title = 'Mean Wind Speed 10 Meters Days by Months',
+                       Bin_name = 'Mean Wind \nSpeed Bins, km/h',
+                       Mean_name = 'Mean \nWind Speed, km/h',
+                       Bin_breaks = seq(0, 105, by = 5),
+                       Bin_labels = Wind_Bin_labels,
+                       Bin_colors = grDevices::colorRampPalette(c('chartreuse4', 'chartreuse3', 'chartreuse2', "chartreuse1", 'yellow', 'darkorange'))(21),
+                       Mean_color = 'gold', Second_Y_Axes_name = 'Mean Wind Speed, km/h',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+#### Wind Speed Roses {.tabset height="54%"}
+
+##### Annual Wind Rose
+
+```{r}
+#| label: Distribution of Annual Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
 
 # Диаграмма Распределения Скорости ветра на уровне 10 м по сторонам света
 Wind_Speed_Rose_plot <-   function(data, from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
                                    Col = 'daily_wind_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
-                                   Title = 'Wind Speed Rose',
-                                   Bin_name = 'Maximum Wind Speed Bins, km/h',
+                                   Title = 'Maximum Wind Speed Rose',
+                                   Bin_name = 'Mean Wind Speed Bins, km/h',
                                    Bin_breaks = seq(0, 105, by = 5),
-                                   Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
-                  setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
-                                   Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21)) {
+                                   Bin_labels = Wind_Bin_labels,
+                                   Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21),
+                                   Months = month.abb) {
   
   Directions <-  c('NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N')
   
   data <- 
     data |>
-      dplyr::filter(date >= from & date <= to) |>
+      dplyr::filter(date >= from & date <= to & Month %in% Months) |>
   # Группы по Градациям Переменной по дням Месяцев
         dplyr::mutate( Bin = factor(base::cut(!!rlang::sym(Mean_Col), breaks = Bin_breaks, right = FALSE))
                      , Direction = factor( forcats::fct_collapse( cut(!!rlang::sym(Col), breaks = seq(-11.25, 360 + 11.25, by = 22.5), right = FALSE), N = c('[-11.2,11.2)', '[349,371)')), labels = Directions ) ) |>
-    janitor::tabyl(Direction, Bin) 
+    na.omit() |>
+      janitor::tabyl(Direction, Bin) 
   
   data_long <- 
     tidyr::pivot_longer( data,
@@ -1195,7 +1318,7 @@ Wind_Speed_Rose_plot <-   function(data, from = min(data$date, na.rm = TRUE), to
                     ) +
     ggplot2::guides( fill = ggplot2::guide_legend(ncol = NCol) )
 
-}    # The End of function `Maximum_Relative_Humidity_plot()`
+}    # The End of function `Wind_Speed_Rose_plot()`
 
 # Пример использования функции
 
@@ -1204,9 +1327,119 @@ Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to
                      Title = 'Wind Speed Rose',
                      Bin_name = 'Maximum Wind Speed Bins, km/h',
                      Bin_breaks = seq(0, 105, by = 5),
-                     Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85-", "85-90", "90-95", "95-100", "100-105") |>
+                     Bin_labels = c("0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30-35", "35-40", "40-45", "45-50", "50-55", "55-60", "60-65", "65-70", "70-75", "75-80", "80-85", "85-90", "90-95", "95-100", "100-105") |>
     setNames( c("[0,5)", "[5,10)", "[10,15)", "[15,20)", "[20,25)", "[25,30)", "[30,35)", "[35,40)", "[40,45)", "[45,50)", "[50,55)", "[55,60)", "[60,65)", "[65,70)", "[70,75)", "[75,80)", "[80,85)", "[85,90)", "[90,95)", "[95,100)", "[100-105)") ),
                      Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21))
+
+```
+
+##### Spring Wind Rose
+
+```{r}
+#| label: Distribution of Spring Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+# Диаграмма Распределения Скорости ветра в Весенние месяцы на уровне 10 м по сторонам света
+Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                     Col = 'daily_wind_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
+                     Title = 'Spring Wind Speed Rose',
+                     Bin_name = 'Maximum Spring Wind Speed Bins, km/h',
+                     Bin_breaks = seq(0, 105, by = 5),
+                     Bin_labels = Wind_Bin_labels,
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21),
+                     Months = c("Mar", "Apr", "May"))
+
+```
+
+##### Summer Wind Rose
+
+```{r}
+#| label: Distribution of Summer Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+# Диаграмма Распределения Скорости ветра в Летние месяцы на уровне 10 м по сторонам света
+Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                     Col = 'daily_wind_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
+                     Title = 'Summer Wind Speed Rose',
+                     Bin_name = 'Maximum Summer Wind Speed Bins, km/h',
+                     Bin_breaks = seq(0, 105, by = 5),
+                     Bin_labels = Wind_Bin_labels,
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21))
+
+```
+
+##### Autumn Wind Rose
+
+```{r}
+#| label: Distribution of Autumn Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+# Диаграмма Распределения Скорости ветра в Осенние месяцы на уровне 10 м по сторонам света
+Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                     Col = 'daily_wind_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
+                     Title = 'Autumn Wind Speed Rose',
+                     Bin_name = 'Maximum Autumn Wind Speed Bins, km/h',
+                     Bin_breaks = seq(0, 105, by = 5),
+                     Bin_labels = Wind_Bin_labels,
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21),
+                     Months = c("Sep", "Oct", "Nov"))
+
+```
+
+##### Winter Wind Rose
+
+```{r}
+#| label: Distribution of Winter Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.35)"
+#| expandable: false
+
+# Диаграмма Распределения Скорости ветра в Зимние месяцы на уровне 10 м по сторонам света
+Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                     Col = 'daily_wind_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
+                     Title = 'Winter Wind Speed Rose',
+                     Bin_name = 'Maximum Winter Wind Speed Bins, km/h',
+                     Bin_breaks = seq(0, 105, by = 5),
+                     Bin_labels = Wind_Bin_labels,
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "yellow", "chartreuse1", "chartreuse2", "chartreuse3", "chartreuse4"))(21),
+                     Months = c("Dec", "Jan", "Feb"))
+
+```
+
+### Column - Winds {width="50%"}
+
+```{r}
+#| label: Distribution of Wind Gusts Speed by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Диаграмма Распределения Скорости Порывов ветра на уровни 10 м по дням Месяцев
+MonthDistribution_plot(data = meteo_tbl, # , from = as.Date(params$Start_Date), to = as.Date(params$Finish_Date)
+                       Col = 'daily_wind_gusts_10m_max', Mean_Col = 'daily_wind_gusts_10m_max',
+                       Title = 'Maximum Daily Wind Gusts Speed 10 Meters by Months',
+                       Bin_name = 'Maximum Wind Gusts \nSpeed Bins, km/h',
+                       Mean_name = 'Mean Maximum \nWind Gusts \nSpeed, km/h',
+                       Bin_breaks = seq(0, 105, by = 5),
+                       Bin_labels = Wind_Bin_labels,
+                       Bin_colors = grDevices::colorRampPalette(c('aquamarine4', 'aquamarine3', 'aquamarine2', "aquamarine1", 'palegoldenrod', 'darkgoldenrod1'))(21),
+                       Mean_color = '#306151', Second_Y_Axes_name = 'Maximum Wind Gusts Speed, km/h',
+                       Is_Scaled_Second_Y_Axes = TRUE)
+
+```
+
+```{r}
+#| label: Distribution of Precipitation Wind Speed Rose by Day Chart
+#| fig-asp: !expr "ifelse(interactive() == TRUE, 1, 0.4)"
+
+# Диаграмма Распределения Скорости ветра во время выпадения Осадков на уровне 10 м по сторонам света
+Wind_Speed_Rose_plot(data = meteo_tbl, # from = min(data$date, na.rm = TRUE), to = max(data$date, na.rm = TRUE), 
+                     Col = 'daily_wind_precipitation_direction_10m_dominant', Mean_Col = 'daily_wind_speed_10m_max',
+                     Title = 'Precipitation Wind Speed Rose',
+                     Bin_name = 'Maximum Precipitation Wind Speed Bins, km/h',
+                     Bin_breaks = seq(0, 105, by = 5),
+                     Bin_labels = Wind_Bin_labels,
+                     Bin_colors = grDevices::colorRampPalette(c("darkorange", "gold", "cadetblue1", "cadetblue2", "cadetblue3", "cadetblue4"))(21))
 
 ```
 
